@@ -743,11 +743,13 @@ label {
   backdrop-filter: blur(4px);
   z-index: 99;
   opacity: 0;
+  pointer-events: none;
   transition: opacity var(--transition-normal);
 }
 
 .sidebar-backdrop.active {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* Report nav buttons - scrollable row */
