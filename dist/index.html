@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Wholesale Dress Stock Recording System</title>
+  <meta name="description" content="Offline-first Wholesale Dress Stock Recording, Inventory Management, and Stock Valuation System.">
+  <script type="module" crossorigin src="/assets/index-BER1an8B.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-j7M_JNJ3.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Mobile sidebar backdrop -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-header">
+        <div class="brand-logo">SS</div>
+        <div>
+          <h2 class="brand-title">Stock Management System</h2>
+          <span class="brand-subtitle">Retail Inventory</span>
+        </div>
+      </div>
+
+      <ul class="nav-menu">
+        <li>
+          <button class="nav-btn active" data-tab="dashboard-tab" id="nav-dashboard">
+            <i data-lucide="layout-dashboard"></i>
+            <span>Dashboard</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="catalog-tab" id="nav-catalog">
+            <i data-lucide="shirt"></i>
+            <span>Dress Catalog</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="stock-in-tab" id="nav-stock-in">
+            <i data-lucide="arrow-down-left-square"></i>
+            <span>Stock-In (Receive)</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="stock-out-tab" id="nav-stock-out">
+            <i data-lucide="arrow-up-right-square"></i>
+            <span>Stock-Out (Sales)</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="reports-tab" id="nav-reports">
+            <i data-lucide="bar-chart-3"></i>
+            <span>Reports & Analytics</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="settings-tab" id="nav-settings">
+            <i data-lucide="database"></i>
+            <span>Data & Backup</span>
+          </button>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-secondary btn-sm" id="theme-toggle-btn" style="width: 100%;">
+          <i data-lucide="moon" id="theme-icon"></i>
+          <span id="theme-label">Dark Theme</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Wrapper -->
+    <div class="main-wrapper">
+      <!-- Top Bar Header -->
+      <header class="top-bar">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <button class="mobile-nav-toggle" id="mobile-nav-toggle" aria-label="Toggle Navigation">
+            <i data-lucide="menu"></i>
+          </button>
+          <div class="page-title-group">
+            <h1 id="current-page-title">Dashboard Overview</h1>
+            <p id="current-page-desc">Real-time stock status, inventory valuation, and recent activity.</p>
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button class="btn btn-primary btn-sm" id="quick-stock-in-btn">
+            <i data-lucide="plus"></i>
+            <span>Stock-In</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" id="quick-stock-out-btn">
+            <i data-lucide="minus"></i>
+            <span>Stock-Out</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Content Container -->
+      <main class="content-area">
+        
+        <!-- DASHBOARD TAB -->
+        <section class="tab-pane active" id="dashboard-tab">
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-info">
+                <div class="stat-label">Total Dress Items</div>
+                <div class="stat-value" id="dash-total-items">0</div>
+                <div class="stat-sub">Unique Dress Profiles</div>
+              </div>
+              <div class="stat-icon-wrapper stat-icon-indigo">
+                <i data-lucide="shirt"></i>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-info">
+                <div class="stat-label">Total Stock Pieces</div>
+                <div class="stat-value" id="dash-total-pieces">0</div>
+                <div class="stat-sub">Individual Dress Units</div>
+              </div>
+              <div class="stat-icon-wrapper stat-icon-emerald">
+                <i data-lucide="layers"></i>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-info">
+                <div class="stat-label">Inventory Valuation (Cost)</div>
+                <div class="stat-value" id="dash-total-cost-val">$0.00</div>
+                <div class="stat-sub">Total Purchase Investment</div>
+              </div>
+              <div class="stat-icon-wrapper stat-icon-pink">
+                <i data-lucide="dollar-sign"></i>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-info">
+                <div class="stat-label">Wholesale Sales Value</div>
+                <div class="stat-value" id="dash-total-wholesale-val">$0.00</div>
+                <div class="stat-sub">Est. Wholesale Revenue</div>
+              </div>
+              <div class="stat-icon-wrapper stat-icon-amber">
+                <i data-lucide="trending-up"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Row -->
+          <div class="form-row dashboard-charts-row" style="margin-bottom: 24px;">
+            <div class="card" style="flex: 1;">
+              <div class="card-header">
+                <h3 class="card-title"><i data-lucide="pie-chart"></i> Stock Distribution by Dress</h3>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-stock-dist"></canvas>
+              </div>
+            </div>
+            
+            <div class="card" style="flex: 1;">
+              <div class="card-header">
+                <h3 class="card-title"><i data-lucide="activity"></i> Recent Stock Movement</h3>
+              </div>
+              <div class="chart-container">
+                <canvas id="chart-movement"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Audit Log Table -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i data-lucide="clock"></i> Recent Inventory Activity Logs</h3>
+              <button class="btn btn-secondary btn-sm" id="view-all-logs-btn">View All Logs</button>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>Type</th>
+                    <th>Dress Item</th>
+                    <th>Variant (Size/Color)</th>
+                    <th>Qty</th>
+                    <th>Party / Reference</th>
+                    <th>Reason / Details</th>
+                  </tr>
+                </thead>
+                <tbody id="dash-recent-logs-tbody">
+                  <tr><td colspan="7" style="text-align: center; color: var(--text-dim);">Loading logs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- CATALOG TAB -->
+        <section class="tab-pane" id="catalog-tab">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title"><i data-lucide="shirt"></i> Dress Catalog & Master Item Profiles</h3>
+              <button class="btn btn-primary" id="add-new-dress-btn">
+                <i data-lucide="plus"></i> Add New Dress Item
+              </button>
+            </div>
+
+            <div class="filter-bar">
+              <div class="search-input-wrap">
+                <i data-lucide="search"></i>
+                <input type="text" id="catalog-search" class="form-control" placeholder="Search by name, description, supplier...">
+              </div>
+              <select id="catalog-supplier-filter" class="form-control" style="max-width: 220px;">
+                <option value="">All Suppliers</option>
+              </select>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Dress Name</th>
+                    <th>Supplier / Vendor Details</th>
+                    <th>Unit Cost</th>
+                    <th>Wholesale Price</th>
+                    <th>Available Variants & Stock (Pieces)</th>
+                    <th>Total Stock</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="catalog-table-tbody">
+                  <tr><td colspan="7" style="text-align: center; color: var(--text-dim);">Loading catalog...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- STOCK-IN TAB -->
+        <section class="tab-pane" id="stock-in-tab">
+          <div class="card" style="max-width: 760px; margin: 0 auto 24px;">
+            <div class="card-header">
+              <h3 class="card-title"><i data-lucide="arrow-down-left-square"></i> Log Incoming Stock Shipment</h3>
+            </div>
+
+            <form id="stock-in-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-in-datetime">Received Date & Time *</label>
+                  <input type="datetime-local" id="stock-in-datetime" class="form-control form-control-simple" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-in-item">Select Dress Item *</label>
+                  <select id="stock-in-item" class="form-control form-control-simple" required>
+                    <option value="">-- Choose Item --</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-in-supplier">Supplier / Vendor Name</label>
+                  <input type="text" id="stock-in-supplier" class="form-control form-control-simple" placeholder="Vendor name (auto-filled if empty)">
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-in-cost">Purchase / Unit Cost Price (LKR per piece) *</label>
+                  <input type="number" step="0.01" min="0" id="stock-in-cost" class="form-control form-control-simple" placeholder="0.00" required>
+                  <small style="color: var(--text-dim); font-size: 0.75rem;">Allows updating purchase cost for price fluctuation tracking.</small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-in-size">Size *</label>
+                  <select id="stock-in-size" class="form-control form-control-simple" required>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M" selected>M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                    <option value="XXL">XXL</option>
+                    <option value="Free Size">Free Size</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-in-color">Color / Variant *</label>
+                  <input type="text" id="stock-in-color" class="form-control form-control-simple" placeholder="e.g. Royal Blue, Emerald Green" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-in-qty">Quantity Received (Pieces) *</label>
+                  <input type="number" min="1" id="stock-in-qty" class="form-control form-control-simple" placeholder="10" required>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="stock-in-notes">Shipment Notes / Batch Reference</label>
+                <textarea id="stock-in-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
+                <button type="reset" class="btn btn-secondary">Reset Form</button>
+                <button type="submit" class="btn btn-success">
+                  <i data-lucide="check"></i> Submit Stock-In
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- STOCK-OUT TAB -->
+        <section class="tab-pane" id="stock-out-tab">
+          <div class="card" style="max-width: 760px; margin: 0 auto 24px;">
+            <div class="card-header">
+              <h3 class="card-title"><i data-lucide="arrow-up-right-square"></i> Log Outgoing Stock (Sales & Reductions)</h3>
+            </div>
+
+            <form id="stock-out-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-out-datetime">Stock-Out Date & Time *</label>
+                  <input type="datetime-local" id="stock-out-datetime" class="form-control form-control-simple" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-out-item">Select Dress Item *</label>
+                  <select id="stock-out-item" class="form-control form-control-simple" required>
+                    <option value="">-- Choose Item --</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-out-customer">Customer / Retailer Name</label>
+                  <input type="text" id="stock-out-customer" class="form-control form-control-simple" placeholder="Retailer / Customer Name">
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-out-ref">Sales Order / Invoice Ref #</label>
+                  <input type="text" id="stock-out-ref" class="form-control form-control-simple" placeholder="INV-2026-001">
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-out-variant">Available Variant & Stock *</label>
+                  <select id="stock-out-variant" class="form-control form-control-simple" required>
+                    <option value="">-- Select Item First --</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-out-qty">Quantity Deducted (Pieces) *</label>
+                  <input type="number" min="1" id="stock-out-qty" class="form-control form-control-simple" placeholder="1" required>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="stock-out-reason">Reason Code for Stock Reduction *</label>
+                <select id="stock-out-reason" class="form-control form-control-simple" required>
+                  <option value="Wholesale Customer Sale">Wholesale Customer Sale</option>
+                  <option value="Damaged / Defective Garment Adjustment">Damaged / Defective Garment Adjustment</option>
+                  <option value="Return to Supplier / Vendor">Return to Supplier / Vendor</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="stock-out-notes">Transaction Notes</label>
+                <textarea id="stock-out-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
+                <button type="reset" class="btn btn-secondary">Reset Form</button>
+                <button type="submit" class="btn btn-danger">
+                  <i data-lucide="minus-circle"></i> Confirm Stock-Out
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- REPORTS & ANALYTICS TAB -->
+        <section class="tab-pane" id="reports-tab">
+          <!-- Report Selector Header -->
+          <div class="card" style="margin-bottom: 20px;">
+            <div class="card-header">
+              <h3 class="card-title"><i data-lucide="file-text"></i> Reports & Valuation Dashboard</h3>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;" class="report-nav-row">
+                <button class="btn btn-secondary active" id="rpt-nav-current">📊 Real-Time Stock</button>
+                <button class="btn btn-secondary" id="rpt-nav-movement">📋 Movement Log</button>
+                <button class="btn btn-secondary" id="rpt-nav-valuation">💰 Valuation Report</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Report 1: Real-Time Current Stock Level Report -->
+          <div class="card report-view-pane active" id="report-view-stock">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Real-Time Current Stock Level Report</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Live count of available pieces categorized by item name, size, and color variants.</p>
+              </div>
+              <button class="btn btn-success btn-sm" id="export-stock-csv">
+                <i data-lucide="download"></i> Export CSV
+              </button>
+            </div>
+
+            <div class="filter-bar">
+              <div class="search-input-wrap">
+                <i data-lucide="search"></i>
+                <input type="text" id="rpt-stock-search" class="form-control" placeholder="Search by item name or color...">
+              </div>
+              <select id="rpt-stock-size-filter" class="form-control" style="max-width: 150px;">
+                <option value="">All Sizes</option>
+                <option value="XS">XS</option>
+                <option value="S">S</option>
+                <option value="M">M</option>
+                <option value="L">L</option>
+                <option value="XL">XL</option>
+                <option value="XXL">XXL</option>
+                <option value="Free Size">Free Size</option>
+              </select>
+              <select id="rpt-stock-status-filter" class="form-control" style="max-width: 180px;">
+                <option value="">All Stock Levels</option>
+                <option value="in_stock">In Stock (&gt; 0)</option>
+                <option value="low_stock">Low Stock (&lt;= 15)</option>
+                <option value="out_of_stock">Out of Stock (0)</option>
+              </select>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Item Name</th>
+                    <th>Size</th>
+                    <th>Color / Variant</th>
+                    <th>Available Stock (Pieces)</th>
+                    <th>Unit Cost</th>
+                    <th>Wholesale Price</th>
+                    <th>Subtotal Cost Value</th>
+                    <th>Subtotal Wholesale Value</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="rpt-stock-tbody">
+                  <tr><td colspan="9" style="text-align: center; color: var(--text-dim);">Loading inventory data...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Report 2: Stock Movement Log -->
+          <div class="card report-view-pane" id="report-view-movement" style="display: none;">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Stock Movement Audit Log</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Transaction audit history tracking Stock-In (receiving) vs Stock-Out (sales/reductions).</p>
+              </div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <button class="btn btn-success btn-sm" id="export-movement-csv">
+                  ⬇️ Export CSV
+                </button>
+                <button class="btn btn-danger btn-sm" id="clear-logs-report-btn">
+                  🗑️ Clear Logs
+                </button>
+              </div>
+            </div>
+
+            <div class="filter-bar">
+              <div class="search-input-wrap">
+                <i data-lucide="search"></i>
+                <input type="text" id="rpt-movement-search" class="form-control" placeholder="Search by item, invoice #, customer, supplier...">
+              </div>
+              <select id="rpt-movement-type-filter" class="form-control" style="max-width: 160px;">
+                <option value="">All Types (IN & OUT)</option>
+                <option value="IN">Stock-In Only</option>
+                <option value="OUT">Stock-Out Only</option>
+              </select>
+              <select id="rpt-movement-reason-filter" class="form-control" style="max-width: 220px;">
+                <option value="">All Reasons</option>
+                <option value="Stock Receiving">Stock Receiving</option>
+                <option value="Wholesale Customer Sale">Wholesale Customer Sale</option>
+                <option value="Damaged / Defective Garment Adjustment">Damaged Adjustment</option>
+                <option value="Return to Supplier / Vendor">Return to Supplier</option>
+              </select>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>Type</th>
+                    <th>Item Name</th>
+                    <th>Size & Color</th>
+                    <th>Quantity (Pieces)</th>
+                    <th>Unit Cost</th>
+                    <th>Wholesale Price</th>
+                    <th>Reason / Action</th>
+                    <th>Party / Reference</th>
+                  </tr>
+                </thead>
+                <tbody id="rpt-movement-tbody">
+                  <tr><td colspan="9" style="text-align: center; color: var(--text-dim);">Loading transaction logs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Report 3: Total Stock Valuation Report -->
+          <div class="card report-view-pane" id="report-view-valuation" style="display: none;">
+            <div class="card-header">
+              <div>
+                <h3 class="card-title">Total Stock Valuation Report</h3>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Summary of warehouse asset value calculated at purchase unit cost and wholesale selling prices.</p>
+              </div>
+              <button class="btn btn-success btn-sm" id="export-valuation-csv">
+                <i data-lucide="download"></i> Export CSV
+              </button>
+            </div>
+
+            <div class="stat-grid" style="margin-bottom: 24px;">
+              <div class="stat-card">
+                <div class="stat-info">
+                  <div class="stat-label">Warehouse Inventory Cost</div>
+                  <div class="stat-value" id="val-total-cost">$0.00</div>
+                  <div class="stat-sub">Based on Purchase Unit Price</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-info">
+                  <div class="stat-label">Total Wholesale Sales Potential</div>
+                  <div class="stat-value" id="val-total-wholesale">$0.00</div>
+                  <div class="stat-sub">Based on Wholesale Selling Price</div>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-info">
+                  <div class="stat-label">Projected Wholesale Gross Profit</div>
+                  <div class="stat-value" style="color: var(--accent-success);" id="val-total-margin">$0.00</div>
+                  <div class="stat-sub" id="val-margin-percent">0% Estimated Gross Margin</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Dress Item Name</th>
+                    <th>Supplier</th>
+                    <th>Stock (Pieces)</th>
+                    <th>Avg Unit Cost</th>
+                    <th>Wholesale Price</th>
+                    <th>Total Cost Value</th>
+                    <th>Total Wholesale Value</th>
+                    <th>Projected Profit</th>
+                  </tr>
+                </thead>
+                <tbody id="rpt-valuation-tbody">
+                  <tr><td colspan="8" style="text-align: center; color: var(--text-dim);">Loading valuation metrics...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- DATA & BACKUP TAB -->
+        <section class="tab-pane" id="settings-tab">
+          <div class="card" style="max-width: 760px; margin: 0 auto 24px;">
+            <div class="card-header">
+              <h3 class="card-title"><i data-lucide="database"></i> Shop Data Backup & Device Transfer</h3>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">
+              This project is set up for real shop use. All entries are saved inside the browser on this device, and you can export a backup file anytime to move the stock data to a laptop later.
+            </p>
+
+            <div class="project-info-box" style="margin-bottom: 18px; padding: 16px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+              <div style="display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center;">
+                <div>
+                  <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Project Identity</div>
+                  <div style="font-weight: 800; font-size: 1.1rem; margin-top: 4px;">DressStock Shop</div>
+                </div>
+                <div>
+                  <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Version</div>
+                  <div style="font-weight: 700; margin-top: 4px;">1.0.0</div>
+                </div>
+                <div>
+                  <div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Mode</div>
+                  <div style="font-weight: 700; margin-top: 4px;">Mobile Shop Use</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div class="backup-action-card" style="padding: 16px; background: var(--bg-input); border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 220px;">
+                  <h4 style="font-weight: 700; margin-bottom: 4px;">Device Name</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted);">Use a name for the phone or laptop that is exporting the backup.</p>
+                </div>
+                <input type="text" id="device-name-input" class="form-control form-control-simple" value="Mobile Shop Phone" placeholder="e.g. Mobile Shop Phone" style="max-width: 260px; min-width: 200px;">
+              </div>
+
+              <div class="backup-action-card" style="padding: 16px; background: var(--bg-input); border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                <div>
+                  <h4 style="font-weight: 700; margin-bottom: 4px;">Export Backup Pack</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted);">Save a full JSON backup file with the device name and project version for future import on another device.</p>
+                </div>
+                <button class="btn btn-primary btn-sm" id="export-db-btn">
+                  ⬇️ Export Backup
+                </button>
+              </div>
+
+              <div class="backup-action-card" style="padding: 16px; background: var(--bg-input); border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                <div>
+                  <h4 style="font-weight: 700; margin-bottom: 4px;">Import Backup Pack</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted);">Import a backup file from a mobile phone or laptop and continue the same stock records.</p>
+                </div>
+                <label class="btn btn-secondary btn-sm" style="margin: 0; cursor: pointer;">
+                  ⬆️ Select Backup File
+                  <input type="file" id="import-db-input" accept=".json" style="display: none;">
+                </label>
+              </div>
+
+              <div class="backup-action-card" style="padding: 12px 16px; background: rgba(16, 185, 129, 0.08); border-radius: var(--radius-md); border: 1px solid rgba(16, 185, 129, 0.2); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                <div style="font-size: 0.82rem; color: var(--text-muted);">Sync status</div>
+                <div id="backup-sync-status" style="font-weight: 700; color: var(--accent-success);">Ready for offline backup</div>
+              </div>
+
+              <div class="backup-action-card" style="padding: 16px; background: rgba(239, 68, 68, 0.05); border-radius: var(--radius-md); border: 1px solid rgba(239, 68, 68, 0.15); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                <div>
+                  <h4 style="font-weight: 700; color: #fca5a5; margin-bottom: 4px;">Clear All Transaction Logs</h4>
+                  <p style="font-size: 0.8rem; color: var(--text-muted);">Permanently delete all Stock-In and Stock-Out transaction history. Item catalog and current stock levels are NOT affected.</p>
+                </div>
+                <button class="btn btn-danger btn-sm" id="clear-logs-btn">
+                  🗑️ Clear Logs
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- ADD / EDIT DRESS ITEM MODAL -->
+  <div class="modal-overlay" id="dress-modal">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 class="modal-title" id="dress-modal-title">Add New Dress Item</h3>
+        <button class="modal-close" id="dress-modal-close"><i data-lucide="x"></i></button>
+      </div>
+      <form id="dress-item-form">
+        <div class="modal-body">
+          <input type="hidden" id="dress-id">
+          
+          <div class="form-group">
+            <label for="dress-name">Dress Item Name *</label>
+            <input type="text" id="dress-name" class="form-control form-control-simple" placeholder="e.g. Floral Silk Maxi Dress" required>
+          </div>
+
+          <div class="form-group">
+            <label for="dress-desc">Description</label>
+            <textarea id="dress-desc" class="form-control form-control-simple" rows="2" placeholder="Fabric, fit details, pattern..."></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="dress-supplier-name">Supplier / Vendor Name *</label>
+              <input type="text" id="dress-supplier-name" class="form-control form-control-simple" placeholder="e.g. Elegance Fabrics Ltd." required>
+            </div>
+            <div class="form-group">
+              <label for="dress-supplier-contact">Supplier Contact Details</label>
+              <input type="text" id="dress-supplier-contact" class="form-control form-control-simple" placeholder="Phone, email, or contact person">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="dress-cost">Purchase / Unit Cost Price (LKR) *</label>
+              <input type="number" step="0.01" min="0" id="dress-cost" class="form-control form-control-simple" placeholder="35.00" required>
+            </div>
+            <div class="form-group">
+              <label for="dress-wholesale-price">Wholesale Selling Price (LKR) *</label>
+              <input type="number" step="0.01" min="0" id="dress-wholesale-price" class="form-control form-control-simple" placeholder="68.00" required>
+            </div>
+          </div>
+
+          <!-- Variants List Builder -->
+          <div class="form-group" style="margin-top: 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+              <label style="margin: 0;">Initial Variants (Size, Color, Stock Pieces)</label>
+              <button type="button" class="btn btn-secondary btn-sm" id="add-variant-row-btn">
+                <i data-lucide="plus"></i> Add Variant
+              </button>
+            </div>
+            <div id="variant-builder-container">
+              <!-- Dynamic Rows inserted via JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="dress-modal-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="dress-modal-submit">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN SCRIPT ENTRYPOINT -->
+</body>
+</html>
