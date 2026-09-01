@@ -144,9 +144,9 @@ export async function addDressItem(itemData) {
     description: itemData.description || '',
     supplierName: itemData.supplierName || 'General Supplier',
     supplierContact: itemData.supplierContact || '',
-    quantity: Math.max(0, Number(itemData.quantity) || 0),
+    quantity: 0,
     unitPrice: Number(itemData.unitPrice) || 0,
-    totalValue: Number(itemData.totalValue) || 0,
+    totalValue: 0,
   };
 
   if (isSupabaseConfigured()) {

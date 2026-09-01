@@ -501,9 +501,6 @@ function initModalHandlers() {
   const closeBtn = document.getElementById('dress-modal-close');
   const cancelBtn = document.getElementById('dress-modal-cancel');
   const form = document.getElementById('dress-item-form');
-  const qtyInput = document.getElementById('dress-qty');
-  const unitPriceInput = document.getElementById('dress-unit-price');
-  const totalValueInput = document.getElementById('dress-total-value');
   const invoiceModal = document.getElementById('invoice-modal');
   const invoiceCloseBtn = document.getElementById('invoice-modal-close');
   const invoiceCloseFooterBtn = document.getElementById('invoice-modal-close-btn');
@@ -519,15 +516,6 @@ function initModalHandlers() {
     if (e.target === invoiceModal) closeInvoiceModal();
   });
 
-  const updateDressTotal = () => {
-    const qty = Number(qtyInput.value) || 0;
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    totalValueInput.value = (qty * unitPrice).toFixed(2);
-  };
-
-  qtyInput.addEventListener('input', updateDressTotal);
-  unitPriceInput.addEventListener('input', updateDressTotal);
-
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const id = document.getElementById('dress-id').value;
@@ -535,8 +523,9 @@ function initModalHandlers() {
     const description = document.getElementById('dress-desc').value.trim();
     const supplierName = document.getElementById('dress-supplier-name').value.trim();
     const supplierContact = document.getElementById('dress-supplier-contact').value.trim();
-    const quantity = Number(document.getElementById('dress-qty').value) || 0;
     const unitPrice = Number(document.getElementById('dress-unit-price').value) || 0;
+    const existingItem = id ? allItemsCache.find(item => item.id === Number(id)) : null;
+    const quantity = existingItem ? Number(existingItem.quantity || 0) : 0;
     const totalValue = quantity * unitPrice;
 
     const itemData = { name, description, supplierName, supplierContact, quantity, unitPrice, totalValue };
@@ -573,15 +562,11 @@ function openDressModal(itemId = null) {
       document.getElementById('dress-desc').value = item.description || '';
       document.getElementById('dress-supplier-name').value = item.supplierName || '';
       document.getElementById('dress-supplier-contact').value = item.supplierContact || '';
-      document.getElementById('dress-qty').value = item.quantity || 0;
       document.getElementById('dress-unit-price').value = item.unitPrice || 0;
-      document.getElementById('dress-total-value').value = (Number(item.quantity || 0) * Number(item.unitPrice || 0)).toFixed(2);
     }
   } else {
     titleEl.textContent = 'Add New Dress Item';
-    document.getElementById('dress-qty').value = 0;
     document.getElementById('dress-unit-price').value = 0;
-    document.getElementById('dress-total-value').value = '0.00';
   }
 
   modal.classList.add('active');
