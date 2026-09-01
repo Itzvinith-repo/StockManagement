@@ -24,6 +24,7 @@ create table if not exists public.transactions (
   unit_price numeric(12,2) default 0,
   total_amount numeric(14,2) default 0,
   reason_code text,
+  description text default '',
   notes text default ''
 );
 
@@ -35,6 +36,7 @@ alter table public.items add column if not exists total_value numeric(14,2) not 
 alter table public.transactions add column if not exists transaction_time timestamptz default now();
 alter table public.transactions add column if not exists unit_price numeric(12,2) default 0;
 alter table public.transactions add column if not exists total_amount numeric(14,2) default 0;
+alter table public.transactions add column if not exists description text default '';
 
 -- Preserve existing transaction dates when upgrading from the old timestamp column.
 do $$

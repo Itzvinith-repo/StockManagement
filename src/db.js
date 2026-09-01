@@ -37,6 +37,7 @@ const mapTransactionRow = (row) => ({
   totalAmount: Number(row.total_amount ?? row.totalAmount ?? 0),
   reasonCode: row.reason_code ?? row.reasonCode ?? '',
   notes: row.notes ?? '',
+  description: row.description ?? '',
   totalWholesaleAmount: Number(row.total_wholesale_amount ?? row.totalWholesaleAmount ?? 0),
   totalCostAmount: Number(row.total_cost_amount ?? row.totalCostAmount ?? 0),
   wholesalePrice: Number(row.wholesale_price ?? row.wholesalePrice ?? 0),
@@ -288,6 +289,8 @@ export async function processStockIn(data) {
       totalAmount: qty * usedPrice,
       reasonCode: data.reasonCode || 'Stock Receiving',
       notes: data.notes || '',
+      description: item.description || '',
+      description: item.description || '',
     });
   });
 }
@@ -332,6 +335,7 @@ export async function processStockOut(data) {
       total_amount: qty * unitPrice,
       reason_code: data.reasonCode || 'Wholesale Customer Sale',
       notes: data.notes || '',
+      description: item.description || '',
     }]);
 
     if (transactionError) throw transactionError;
@@ -370,6 +374,7 @@ export async function processStockOut(data) {
       totalAmount: qty * usedPrice,
       reasonCode: data.reasonCode || 'Wholesale Customer Sale',
       notes: data.notes || '',
+      description: item.description || '',
     });
   });
 }
@@ -379,6 +384,16 @@ export async function getAllTransactions() {
     return getRemoteTransactions();
   }
   return getLocalTransactions();
+}
+
+export async function clearAllTransactions() {
+  if (isSupabaseConfigured()) {
+    const { error } = await supabase.from('transactions').delete().neq('id', 0);
+    if (error) throw error;
+    return;
+  }
+
+  await db.transactions.clear();
 }
 
 export async function exportDatabaseJSON(options = {}) {

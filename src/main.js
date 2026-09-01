@@ -11,6 +11,7 @@ import {
   processStockIn, 
   processStockOut, 
   getAllTransactions, 
+  clearAllTransactions,
   exportDatabaseJSON, 
   importDatabaseJSON 
 } from './db.js';
@@ -290,7 +291,7 @@ function renderDashboard() {
         <td style="font-size: 0.825rem; color: var(--text-muted);">${formatDate(tx.timestamp)}</td>
         <td><span class="badge ${badgeClass}">${badgeText}</span></td>
         <td style="font-weight: 600;">${tx.itemName || 'Dress Item'}</td>
-        <td style="font-size: 0.85rem; color: var(--text-muted);">${tx.type === 'IN' ? 'Stock receiving' : 'Sales / reduction'}</td>
+        <td style="font-size: 0.85rem; color: var(--text-muted);">${tx.description || tx.notes || (tx.type === 'IN' ? 'Stock receiving' : 'Sales / reduction')}</td>
         <td style="font-weight: 700;">${tx.type === 'IN' ? '+' : '-'}${tx.quantity} pcs</td>
         <td style="font-size: 0.85rem;">${party}${ref}</td>
         <td style="font-size: 0.85rem; color: var(--text-muted);">${tx.reasonCode || ''}</td>
@@ -971,7 +972,7 @@ function renderReportMovement() {
       <td style="font-size: 0.825rem; color: var(--text-muted);">${formatDate(tx.timestamp)}</td>
       <td><span class="badge ${badgeClass}">${badgeText}</span></td>
       <td style="font-weight: 600;">${tx.itemName}</td>
-      <td style="font-size: 0.85rem; color: var(--text-muted);">Single item stock</td>
+      <td style="font-size: 0.85rem; color: var(--text-muted);">${tx.description || tx.notes || 'Single item stock'}</td>
       <td style="font-weight: 800;">${tx.type === 'IN' ? '+' : '-'}${tx.quantity} pcs</td>
       <td>${formatCurrency(Number(tx.unitPrice || 0))}</td>
       <td>${formatCurrency(Number(tx.totalAmount || 0))}</td>
@@ -1149,7 +1150,7 @@ async function clearAllLogs() {
   }
   if (confirm(`Are you sure you want to permanently delete all ${count} transaction log entries?\n\nNote: Your dress catalog and current stock levels will NOT be affected.`)) {
     try {
-      await db.transactions.clear();
+      await clearAllTransactions();
       await refreshAllData();
       alert(`✅ ${count} transaction log entries have been cleared successfully.`);
     } catch (err) {
