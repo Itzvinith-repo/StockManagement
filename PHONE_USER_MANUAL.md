@@ -1,142 +1,141 @@
-# Phone User Manual for Stock Management System
+# Phone User Manual - DressStock Shop
 
-This app is made for real shop use on a mobile phone.
+This manual explains how to use the DressStock Shop stock management system from a phone.
 
-## 1) What this app does
+## 1) Opening the app
 
-Use this app to:
-- add dress items and catalog products
-- record stock received (Stock-In)
-- record stock sold or removed (Stock-Out)
-- check dashboard and stock reports
-- export backup files for later laptop use
+Use the permanent client URL supplied by the project owner. Save it in the phone browser bookmarks or add it to the home screen.
 
-## 2) Use on the phone in the shop
+The recommended setup is:
 
-### Option A: Same Wi-Fi network
-If the phone and the computer are on the same Wi-Fi, open the app using the computer's local address.
+- Phone connected to mobile data or Wi-Fi
+- Hosted app URL opened in Chrome or Safari
+- Supabase used automatically for shared shop data
 
-Example:
-- http://192.168.1.10:5173
+The shop computer does not need to remain switched on after the app has been deployed to its hosting service. Do not use a temporary `trycloudflare.com` URL for normal daily work.
 
-This is simple and works well if both devices are in the same place.
+## 2) Main menu
 
-### Option B: Different network / different ISP / different location
-If the phone is on a different network, use Cloudflare Tunnel.
+On a phone, tap the menu button at the top-left to open navigation. Choose:
 
-This is the best free way to use the app remotely without typing a local IP address.
+- **Dashboard**: view total items, pieces, stock value, and recent activity
+- **Dress Catalog**: add, edit, or delete dress item profiles
+- **Stock-In**: record goods received from a supplier
+- **Stock-Out**: record sales, damaged items, or returns to a supplier
+- **Reports & Analytics**: search stock, transactions, and valuation
+- **Data & Backup**: export a backup file or import an earlier backup
 
-## 3) How Cloudflare works
+After choosing a menu item, the drawer closes automatically. If it stays open, tap outside the drawer.
 
-Cloudflare Tunnel creates a secure public link to your local app.
+## 3) Add a new dress item
 
-Flow:
-1. The shop computer runs the app locally.
-2. Cloudflare connects to that local app.
-3. The phone opens the Cloudflare link in the browser.
-4. The phone can use the app even though it is on another internet network.
+Use this once for each dress profile.
 
-This means:
-- you do not need to type a local IP address in the phone
-- you do not need the phone to be on the same Wi-Fi
-- the app can be used from another location, as long as the computer in the shop is ON and connected to the internet
+1. Open **Dress Catalog**.
+2. Tap **Add New Dress Item**.
+3. Enter the dress name.
+4. Enter the supplier name and contact details.
+5. Enter the purchase/unit cost and wholesale selling price.
+6. Add each size and color variant with its starting quantity.
+7. Tap **Save Item**.
 
-## 4) Steps to use Cloudflare for free
+The item will appear in the catalog and in the Stock-In and Stock-Out selection lists.
 
-### On the shop computer
-1. Open the project folder in terminal.
-2. Run:
-   ```bash
-   npm install
-   npm run dev -- --host 0.0.0.0
-   ```
-3. Keep this terminal open while the app is running.
+## 4) Record Stock-In
 
-### Install Cloudflare Tunnel
-4. Install Cloudflare Tunnel on the same computer.
-5. Run:
-   ```bash
-   cloudflared tunnel --url http://localhost:5173
-   ```
-6. Cloudflare will give you a public URL, such as:
-   ```text
-   https://something.trycloudflare.com
-   ```
+Use Stock-In when new goods arrive.
 
-### On the mobile phone
-7. Open the Cloudflare URL in the browser.
-8. Use the app normally.
+1. Open **Stock-In**.
+2. Select the dress item.
+3. Confirm or enter the supplier and purchase cost.
+4. Select the size.
+5. Enter the color or variant name.
+6. Enter the quantity received in pieces.
+7. Add an invoice number or delivery note in the notes field if available.
+8. Tap **Submit Stock-In**.
 
-## 5) Can I use it on mobile with a different ISP?
+The stock quantity and dashboard totals update after the entry is saved.
 
-Yes.
+## 5) Record Stock-Out
 
-If the app is exposed through Cloudflare Tunnel, the phone can use it from a different ISP, different household internet, or different location.
+Use Stock-Out whenever stock leaves the shop.
 
-This works because:
-- the phone connects to the Cloudflare public URL
-- Cloudflare connects to the computer in the shop
-- your phone does not need to be on the same local network
+1. Open **Stock-Out**.
+2. Select the dress item and variant.
+3. Enter the quantity removed.
+4. Select the reason, such as wholesale sale, damaged item, or supplier return.
+5. Enter the customer, supplier, invoice, or reference details when applicable.
+6. Add notes if needed.
+7. Tap **Submit Stock-Out**.
 
-## 6) Important note about data
+Do not record a quantity greater than the available stock. Check the dashboard or current stock report first when unsure.
 
-This app stores data in the browser on the device being used.
+## 6) Check stock and reports
 
-That means:
-- data on the phone stays on that phone
-- data on the laptop stays on that laptop
-- data is not automatically shared between devices
+### Dashboard
 
-So the correct workflow is:
-1. Use the phone in the shop.
-2. Export backup JSON file.
-3. Save the backup in Google Drive / email / WhatsApp / USB.
-4. Later, use the laptop and import the backup file.
+The Dashboard shows the current total dress profiles, total pieces, purchase value, wholesale value, charts, and recent movements.
 
-## 7) Daily real-use workflow
+### Current Stock Report
 
-### On the phone
-1. Open the app.
-2. Add or update dress catalog items.
-3. Record Stock-In entries.
-4. Record Stock-Out entries.
-5. Check dashboard and reports.
-6. Go to Data & Backup.
-7. Enter a device name like: `Mobile Shop Phone`.
-8. Tap Export Backup.
-9. Save the backup file to a safe place.
+Open **Reports & Analytics**, then choose the current stock view. Search by item name and filter by size or stock status.
 
-### On the laptop later
-1. Open the app.
-2. Go to Data & Backup.
-3. Tap Select Backup File.
-4. Import the saved JSON file.
-5. Continue working from the laptop.
+### Movement Report
 
-## 8) Best free setup for your shop
+Use the movement view to find Stock-In and Stock-Out history. Search by item, invoice, customer, supplier, or reference number. Use the filters to show only Stock-In or Stock-Out entries.
 
-Use this setup:
-- phone in shop with Cloudflare access
-- export backup daily
-- laptop later for bigger reporting or full management
+### Valuation Report
 
-This is the easiest free solution without paying for hosting.
+Use the valuation view to review purchase cost, estimated wholesale value, and projected gross profit.
 
-## 9) Safety reminder
+## 7) Shared data on multiple phones
 
-- Keep at least one backup file on another device or cloud storage.
-- Do not rely on one phone alone for long-term stock data.
-- Always export backup before switching to another device.
+When the app is opened through the hosted client URL, entries are saved in the shared Supabase database. This means approved devices can see the same catalog, stock quantities, and transaction history.
 
-## 10) Summary
+After saving an entry, allow the success message to appear before closing the browser. If another device does not show the latest entry, refresh the page and check the internet connection.
 
-Yes — with Cloudflare, your sister can use this app on a phone from a different ISP or location.
+## 8) Backup and device transfer
 
-The best low-cost workflow is:
-- run the app on a computer in the shop
-- share it using Cloudflare Tunnel
-- use the phone to record stock in real time
-- export backup files regularly
-- import them later on the laptop
+Supabase is the main shared storage. Backups are still recommended before major changes or when changing devices.
 
-This gives a practical real shop setup without paying for hosting.
+1. Open **Data & Backup**.
+2. Leave the device name, or enter a clear name such as `Shop Phone`.
+3. Tap **Export Backup**.
+4. Save the JSON file to Google Drive, email, or another safe location.
+
+To restore a backup:
+
+1. Open **Data & Backup**.
+2. Tap **Select Backup File**.
+3. Choose the saved JSON backup.
+4. Confirm the import if prompted.
+5. Refresh the app and check the Dashboard.
+
+Do not import an old backup unless you intend to restore its data. An old file may replace newer records.
+
+## 9) Daily working method
+
+1. Open the permanent app URL.
+2. Check the Dashboard for the current stock position.
+3. Add new dress profiles when a product is not already in the catalog.
+4. Record every delivery using Stock-In.
+5. Record every sale, damage, or return using Stock-Out.
+6. Review the Movement Report at the end of the day.
+7. Export a backup regularly and keep it in cloud storage.
+
+## 10) If something does not work
+
+- Make sure the phone has internet access.
+- Refresh the page once.
+- Check that the correct hosted URL is being used.
+- Make sure all required fields are completed.
+- If a save fails, do not repeatedly submit it. Check whether the record was saved in the Dashboard or Movement Report first.
+- Contact the project owner if the problem continues, including the item name and the action attempted.
+
+## 11) Important safety rules
+
+- Use only the approved client URL.
+- Do not share database keys or project settings.
+- Keep regular JSON backups in a secure cloud location.
+- Confirm quantities before saving Stock-In or Stock-Out.
+- Do not use an old backup to overwrite current shared data without checking it first.
