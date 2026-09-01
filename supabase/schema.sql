@@ -47,10 +47,12 @@ begin
       and column_name = 'timestamp'
   ) then
     update public.transactions
-    set transaction_time = timestamp
-    where timestamp is not null;
+    set transaction_time = "timestamp"
+    where "timestamp" is not null;
   end if;
 end $$;
 
 create index if not exists idx_transactions_transaction_time on public.transactions(transaction_time desc);
 create index if not exists idx_items_supplier_name on public.items(supplier_name);
+
+notify pgrst, 'reload schema';
