@@ -226,7 +226,7 @@ export async function processStockIn(data) {
     if (itemError) throw itemError;
     if (!item) throw new Error('Dress item not found');
 
-    const nextQty = qty;
+    const nextQty = Number(item.quantity || 0) + qty;
     const nextValue = nextQty * (unitPrice || Number(item.unit_price || 0));
 
     const { error: updateError } = await supabase.from('items').update({
@@ -263,7 +263,7 @@ export async function processStockIn(data) {
     const item = await db.items.get(itemId);
     if (!item) throw new Error('Dress item not found');
 
-    const nextQuantity = qty;
+    const nextQuantity = Number(item.quantity || 0) + qty;
     const usedPrice = unitPrice || Number(item.unitPrice || 0);
     const nextTotalValue = nextQuantity * usedPrice;
 
