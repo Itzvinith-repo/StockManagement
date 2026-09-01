@@ -26,6 +26,7 @@ let movementChart = null;
 let currentTab = 'dashboard-tab';
 let allItemsCache = [];
 let allTransactionsCache = [];
+let pendingStockInItemId = null;
 
 function updateProjectBadge() {
   // Branding badge intentionally removed for client-facing production use.
@@ -151,6 +152,11 @@ function initNavigation() {
 
       // Refresh view data
       await refreshAllData();
+
+      if (tabId === 'stock-in-tab' && pendingStockInItemId !== null) {
+        prefillStockInForm(pendingStockInItemId);
+        pendingStockInItemId = null;
+      }
 
       // Close mobile drawer on item select
       sidebar.classList.remove('open');
@@ -395,7 +401,7 @@ function renderCatalogTable() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-dim); padding: 24px;">No dress items found matching criteria.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 24px;">No dress items found matching criteria.</td></tr>';
     return;
   }
 
@@ -414,9 +420,11 @@ function renderCatalogTable() {
       <td style="font-weight: 600;">${formatCurrency(item.unitPrice || 0)}</td>
       <td style="font-weight: 700; color: var(--accent-primary);">${formatCurrency(item.totalValue || 0)}</td>
       <td style="font-weight: 700; font-size: 0.95rem;">${Number(item.quantity || 0)} pcs</td>
-      <td style="font-weight: 800; font-size: 1rem;">${Number(item.quantity || 0)} pcs</td>
       <td>
         <div style="display: flex; gap: 8px;">
+          <button class="btn btn-success btn-sm add-stock-btn" data-id="${item.id}" title="Add stock from this supplier">
+            <i data-lucide="package-plus"></i> Add Stock
+          </button>
           <button class="btn btn-secondary btn-sm edit-dress-btn" data-id="${item.id}" title="Edit Item" style="min-width:36px;">
             ✏️
           </button>
@@ -440,8 +448,15 @@ function initCatalogDelegation() {
   if (!catalogCard) return;
 
   catalogCard.addEventListener('click', async (e) => {
+    const addStockBtn = e.target.closest('.add-stock-btn');
     const editBtn = e.target.closest('.edit-dress-btn');
     const deleteBtn = e.target.closest('.delete-dress-btn');
+
+    if (addStockBtn) {
+      pendingStockInItemId = Number(addStockBtn.getAttribute('data-id'));
+      document.getElementById('nav-stock-in').click();
+      return;
+    }
 
     if (editBtn) {
       openDressModal(editBtn.getAttribute('data-id'));
@@ -452,7 +467,7 @@ function initCatalogDelegation() {
       const id = deleteBtn.getAttribute('data-id');
       const item = allItemsCache.find(i => i.id === Number(id));
       if (!item) return;
-      if (confirm(`Are you sure you want to delete "${item.name}" and all its variant stock records? This cannot be undone.`)) {
+      if (confirm(`Are you sure you want to delete "${item.name}" and its stock records? This cannot be undone.`)) {
         try {
           await deleteDressItem(id);
           await refreshAllData();
@@ -462,6 +477,16 @@ function initCatalogDelegation() {
       }
     }
   });
+}
+
+function prefillStockInForm(itemId) {
+  const item = allItemsCache.find(currentItem => currentItem.id === Number(itemId));
+  if (!item) return;
+
+  document.getElementById('stock-in-item').value = String(item.id);
+  document.getElementById('stock-in-supplier').value = item.supplierName || '';
+  document.getElementById('stock-in-unit-price').value = item.unitPrice || '';
+  document.getElementById('stock-in-qty').focus();
 }
 
 // Catalog Search / Filter Listeners
