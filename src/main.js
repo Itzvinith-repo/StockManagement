@@ -178,7 +178,7 @@ function updateHeaderTitle(tabId) {
 
   const titles = {
     'dashboard-tab': { title: 'Dashboard Overview', desc: 'Real-time stock status, inventory valuation, and recent activity.' },
-    'catalog-tab': { title: 'Dress Catalog & Master Profiles', desc: 'Manage dress items, supplier information, wholesale prices, and size/color variants.' },
+    'catalog-tab': { title: 'Dress Catalog & Master Profiles', desc: 'Manage dress items, supplier information, unit pricing, and stock totals.' },
     'stock-in-tab': { title: 'Stock-In Management (Receiving Goods)', desc: 'Record incoming dress shipments, update unit purchase prices, and auto-update inventory.' },
     'stock-out-tab': { title: 'Stock-Out Management (Sales & Reductions)', desc: 'Log sales, damaged garments, or vendor returns with reference numbers and reason codes.' },
     'reports-tab': { title: 'Reports & Analytics Dashboard', desc: 'Real-time stock levels, transaction audit movement logs, and total inventory valuation.' },
@@ -218,14 +218,15 @@ function populateItemDropdowns() {
   const suppliers = new Set();
 
   allItemsCache.forEach(item => {
+    const stockQty = Number(item.quantity || 0);
     const optIn = document.createElement('option');
     optIn.value = item.id;
-    optIn.textContent = `${item.name} (${item.totalStock} pcs in stock)`;
+    optIn.textContent = `${item.name} (${stockQty} pcs in stock)`;
     stockInSelect.appendChild(optIn);
 
     const optOut = document.createElement('option');
     optOut.value = item.id;
-    optOut.textContent = `${item.name} (${item.totalStock} pcs in stock)`;
+    optOut.textContent = `${item.name} (${stockQty} pcs in stock)`;
     stockOutSelect.appendChild(optOut);
 
     if (item.supplierName) suppliers.add(item.supplierName);
@@ -252,10 +253,11 @@ function renderDashboard() {
   let totalWholesaleValuation = 0;
 
   allItemsCache.forEach(item => {
-    const itemPieces = item.totalStock || 0;
+    const itemPieces = Number(item.quantity || 0);
     totalPiecesCount += itemPieces;
-    totalCostValuation += itemPieces * (item.unitCost || 0);
-    totalWholesaleValuation += itemPieces * (item.wholesalePrice || 0);
+    const unitPrice = Number(item.unitPrice || 0);
+    totalCostValuation += itemPieces * unitPrice;
+    totalWholesaleValuation += itemPieces * unitPrice;
   });
 
   document.getElementById('dash-total-items').textContent = totalItemsCount;
@@ -282,7 +284,7 @@ function renderDashboard() {
         <td style="font-size: 0.825rem; color: var(--text-muted);">${formatDate(tx.timestamp)}</td>
         <td><span class="badge ${badgeClass}">${badgeText}</span></td>
         <td style="font-weight: 600;">${tx.itemName || 'Dress Item'}</td>
-        <td><span class="variant-pill">${tx.size} / ${tx.color}</span></td>
+        <td style="font-size: 0.85rem; color: var(--text-muted);">${tx.type === 'IN' ? 'Stock receiving' : 'Sales / reduction'}</td>
         <td style="font-weight: 700;">${tx.type === 'IN' ? '+' : '-'}${tx.quantity} pcs</td>
         <td style="font-size: 0.85rem;">${party}${ref}</td>
         <td style="font-size: 0.85rem; color: var(--text-muted);">${tx.reasonCode || ''}</td>
@@ -306,7 +308,7 @@ function renderCharts() {
     if (stockDistChart) stockDistChart.destroy();
     
     const labels = allItemsCache.map(i => i.name);
-    const data = allItemsCache.map(i => i.totalStock);
+    const data = allItemsCache.map(i => Number(i.quantity || 0));
     const colors = [
       '#6366f1', '#ec4899', '#10b981', '#f59e0b', '#06b6d4', 
       '#8b5cf6', '#f43f5e', '#14b8a6', '#eab308', '#3b82f6'
@@ -399,11 +401,6 @@ function renderCatalogTable() {
 
   filtered.forEach(item => {
     const tr = document.createElement('tr');
-    
-    // Render variants breakdown
-    const variantHTML = (item.variants || []).map(v => 
-      `<span class="variant-pill">${v.size} / ${v.color}: <span class="qty">${v.stockQuantity} pcs</span></span>`
-    ).join(' ');
 
     tr.innerHTML = `
       <td>
@@ -414,10 +411,10 @@ function renderCatalogTable() {
         <div style="font-weight: 600; font-size: 0.875rem;">${item.supplierName}</div>
         <div style="font-size: 0.775rem; color: var(--text-muted);">${item.supplierContact || ''}</div>
       </td>
-      <td style="font-weight: 600;">${formatCurrency(item.unitCost)}</td>
-      <td style="font-weight: 700; color: var(--accent-primary);">${formatCurrency(item.wholesalePrice)}</td>
-      <td><div class="variant-pills">${variantHTML || '<span style="color: var(--text-dim);">No variants</span>'}</div></td>
-      <td style="font-weight: 800; font-size: 1rem;">${item.totalStock} pcs</td>
+      <td style="font-weight: 600;">${formatCurrency(item.unitPrice || 0)}</td>
+      <td style="font-weight: 700; color: var(--accent-primary);">${formatCurrency(item.totalValue || 0)}</td>
+      <td style="font-weight: 700; font-size: 0.95rem;">${Number(item.quantity || 0)} pcs</td>
+      <td style="font-weight: 800; font-size: 1rem;">${Number(item.quantity || 0)} pcs</td>
       <td>
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-secondary btn-sm edit-dress-btn" data-id="${item.id}" title="Edit Item" style="min-width:36px;">
@@ -477,17 +474,33 @@ function initModalHandlers() {
   const addBtn = document.getElementById('add-new-dress-btn');
   const closeBtn = document.getElementById('dress-modal-close');
   const cancelBtn = document.getElementById('dress-modal-cancel');
-  const addVariantRowBtn = document.getElementById('add-variant-row-btn');
   const form = document.getElementById('dress-item-form');
+  const qtyInput = document.getElementById('dress-qty');
+  const unitPriceInput = document.getElementById('dress-unit-price');
+  const totalValueInput = document.getElementById('dress-total-value');
+  const invoiceModal = document.getElementById('invoice-modal');
+  const invoiceCloseBtn = document.getElementById('invoice-modal-close');
+  const invoiceCloseFooterBtn = document.getElementById('invoice-modal-close-btn');
+  const printInvoiceBtn = document.getElementById('invoice-print-btn');
 
   addBtn.addEventListener('click', () => openDressModal(null));
   closeBtn.addEventListener('click', closeDressModal);
   cancelBtn.addEventListener('click', closeDressModal);
-
-  addVariantRowBtn.addEventListener('click', () => {
-    appendVariantRow();
-    refreshIcons();
+  invoiceCloseBtn.addEventListener('click', closeInvoiceModal);
+  invoiceCloseFooterBtn.addEventListener('click', closeInvoiceModal);
+  printInvoiceBtn.addEventListener('click', () => window.print());
+  invoiceModal.addEventListener('click', (e) => {
+    if (e.target === invoiceModal) closeInvoiceModal();
   });
+
+  const updateDressTotal = () => {
+    const qty = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitPriceInput.value) || 0;
+    totalValueInput.value = (qty * unitPrice).toFixed(2);
+  };
+
+  qtyInput.addEventListener('input', updateDressTotal);
+  unitPriceInput.addEventListener('input', updateDressTotal);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -496,28 +509,17 @@ function initModalHandlers() {
     const description = document.getElementById('dress-desc').value.trim();
     const supplierName = document.getElementById('dress-supplier-name').value.trim();
     const supplierContact = document.getElementById('dress-supplier-contact').value.trim();
-    const unitCost = parseFloat(document.getElementById('dress-cost').value);
-    const wholesalePrice = parseFloat(document.getElementById('dress-wholesale-price').value);
+    const quantity = Number(document.getElementById('dress-qty').value) || 0;
+    const unitPrice = Number(document.getElementById('dress-unit-price').value) || 0;
+    const totalValue = quantity * unitPrice;
 
-    // Collect variants
-    const variantRows = document.querySelectorAll('.variant-builder-row');
-    const variants = [];
-    variantRows.forEach(row => {
-      const size = row.querySelector('.var-size').value;
-      const color = row.querySelector('.var-color').value.trim();
-      const quantity = parseInt(row.querySelector('.var-qty').value) || 0;
-      if (size && color) {
-        variants.push({ size, color, quantity });
-      }
-    });
-
-    const itemData = { name, description, supplierName, supplierContact, unitCost, wholesalePrice, variants };
+    const itemData = { name, description, supplierName, supplierContact, quantity, unitPrice, totalValue };
 
     try {
       if (id) {
         await updateDressItem(id, itemData);
       } else {
-        await addDressItem(itemData, variants);
+        await addDressItem(itemData);
       }
 
       closeDressModal();
@@ -532,10 +534,8 @@ function openDressModal(itemId = null) {
   const modal = document.getElementById('dress-modal');
   const titleEl = document.getElementById('dress-modal-title');
   const form = document.getElementById('dress-item-form');
-  const variantContainer = document.getElementById('variant-builder-container');
 
   form.reset();
-  variantContainer.innerHTML = '';
   document.getElementById('dress-id').value = '';
 
   if (itemId) {
@@ -547,19 +547,15 @@ function openDressModal(itemId = null) {
       document.getElementById('dress-desc').value = item.description || '';
       document.getElementById('dress-supplier-name').value = item.supplierName || '';
       document.getElementById('dress-supplier-contact').value = item.supplierContact || '';
-      document.getElementById('dress-cost').value = item.unitCost;
-      document.getElementById('dress-wholesale-price').value = item.wholesalePrice;
-
-      if (item.variants && item.variants.length > 0) {
-        item.variants.forEach(v => appendVariantRow(v.size, v.color, v.stockQuantity));
-      } else {
-        appendVariantRow();
-      }
+      document.getElementById('dress-qty').value = item.quantity || 0;
+      document.getElementById('dress-unit-price').value = item.unitPrice || 0;
+      document.getElementById('dress-total-value').value = (Number(item.quantity || 0) * Number(item.unitPrice || 0)).toFixed(2);
     }
   } else {
     titleEl.textContent = 'Add New Dress Item';
-    // Add default initial variant row
-    appendVariantRow('M', 'Standard', 10);
+    document.getElementById('dress-qty').value = 0;
+    document.getElementById('dress-unit-price').value = 0;
+    document.getElementById('dress-total-value').value = '0.00';
   }
 
   modal.classList.add('active');
@@ -570,44 +566,26 @@ function closeDressModal() {
   document.getElementById('dress-modal').classList.remove('active');
 }
 
-function appendVariantRow(size = 'M', color = '', qty = 0) {
-  const container = document.getElementById('variant-builder-container');
-  const row = document.createElement('div');
-  row.className = 'variant-builder-row';
-  row.innerHTML = `
-    <select class="form-control form-control-simple var-size" style="max-width: 110px;">
-      <option value="XS" ${size === 'XS' ? 'selected' : ''}>XS</option>
-      <option value="S" ${size === 'S' ? 'selected' : ''}>S</option>
-      <option value="M" ${size === 'M' ? 'selected' : ''}>M</option>
-      <option value="L" ${size === 'L' ? 'selected' : ''}>L</option>
-      <option value="XL" ${size === 'XL' ? 'selected' : ''}>XL</option>
-      <option value="XXL" ${size === 'XXL' ? 'selected' : ''}>XXL</option>
-      <option value="Free Size" ${size === 'Free Size' ? 'selected' : ''}>Free Size</option>
-    </select>
-    <input type="text" class="form-control form-control-simple var-color" placeholder="Color (e.g. Royal Blue)" value="${color}" required>
-    <input type="number" min="0" class="form-control form-control-simple var-qty" placeholder="Qty" value="${qty}" style="max-width: 100px;" required>
-    <button type="button" class="btn btn-danger btn-icon remove-var-btn"><i data-lucide="minus"></i></button>
-  `;
-
-  row.querySelector('.remove-var-btn').addEventListener('click', () => {
-    if (container.children.length > 1) {
-      row.remove();
-    } else {
-      alert('At least one size/color variant is required.');
-    }
-  });
-
-  container.appendChild(row);
-}
-
 // Stock-In Form Handler
 function initStockInForm() {
   const form = document.getElementById('stock-in-form');
   const datetimeInput = document.getElementById('stock-in-datetime');
   const itemSelect = document.getElementById('stock-in-item');
-  const costInput = document.getElementById('stock-in-cost');
   const supplierInput = document.getElementById('stock-in-supplier');
+  const qtyInput = document.getElementById('stock-in-qty');
+  const unitPriceInput = document.getElementById('stock-in-unit-price');
+  const totalAmountInput = document.getElementById('stock-in-total-amount');
+  const invoiceNoInput = document.getElementById('stock-in-invoice-no');
+  const generateInvoiceBtn = document.getElementById('stock-in-generate-invoice-btn');
 
+  const updateStockInTotal = () => {
+    const qty = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitPriceInput.value) || 0;
+    totalAmountInput.value = (qty * unitPrice).toFixed(2);
+  };
+
+  qtyInput.addEventListener('input', updateStockInTotal);
+  unitPriceInput.addEventListener('input', updateStockInTotal);
   datetimeInput.value = getLocalDatetimeString();
 
   itemSelect.addEventListener('change', () => {
@@ -615,10 +593,13 @@ function initStockInForm() {
     if (selectedId) {
       const item = allItemsCache.find(i => i.id === Number(selectedId));
       if (item) {
-        costInput.value = item.unitCost;
         supplierInput.value = item.supplierName || '';
+        if (item.unitPrice) {
+          unitPriceInput.value = item.unitPrice;
+        }
       }
     }
+    updateStockInTotal();
   });
 
   form.addEventListener('submit', async (e) => {
@@ -626,21 +607,55 @@ function initStockInForm() {
     const itemId = itemSelect.value;
     const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
     const supplierName = supplierInput.value.trim();
-    const unitCost = parseFloat(costInput.value);
-    const size = document.getElementById('stock-in-size').value;
-    const color = document.getElementById('stock-in-color').value.trim();
-    const quantity = parseInt(document.getElementById('stock-in-qty').value);
+    const unitPrice = Number(unitPriceInput.value) || 0;
+    const quantity = Number(qtyInput.value) || 0;
     const notes = document.getElementById('stock-in-notes').value.trim();
+    const invoiceNo = invoiceNoInput.value.trim();
+
+    if (!itemId || !supplierName || !quantity || !unitPrice) {
+      alert('Please complete all required stock-in fields before submitting.');
+      return;
+    }
 
     try {
-      await processStockIn({ itemId, timestamp, supplierName, unitCost, size, color, quantity, notes });
-      alert(`Stock-In Logged Successfully! Added +${quantity} pcs of ${size}/${color}.`);
+      await processStockIn({ itemId, timestamp, supplierName, unitPrice, quantity, referenceNo: invoiceNo, notes, reasonCode: 'Stock Receiving' });
+      alert(`Stock-In Logged Successfully! Added +${quantity} pcs.`);
       form.reset();
       datetimeInput.value = getLocalDatetimeString();
       await refreshAllData();
     } catch (err) {
       alert(`Failed to log Stock-In: ${err.message}`);
     }
+  });
+
+  generateInvoiceBtn.addEventListener('click', () => {
+    const itemId = itemSelect.value;
+    const selectedItem = allItemsCache.find(i => i.id === Number(itemId));
+    if (!itemId || !selectedItem) {
+      alert('Please choose a dress item before generating an invoice.');
+      return;
+    }
+
+    const quantity = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitPriceInput.value) || 0;
+    const totalAmount = quantity * unitPrice;
+    const supplier = supplierInput.value.trim() || 'Supplier';
+    const referenceNo = invoiceNoInput.value.trim() || 'N/A';
+    const date = datetimeInput.value ? new Date(datetimeInput.value) : new Date();
+
+    openInvoiceModal({
+      type: 'IN',
+      title: 'Stock-In Invoice',
+      itemName: selectedItem.name,
+      partyName: supplier,
+      referenceNo,
+      quantity,
+      unitPrice,
+      totalAmount,
+      date,
+      notes: document.getElementById('stock-in-notes').value.trim(),
+      description: 'Item received into stock / inventory'
+    });
   });
 }
 
@@ -649,54 +664,91 @@ function initStockOutForm() {
   const form = document.getElementById('stock-out-form');
   const datetimeInput = document.getElementById('stock-out-datetime');
   const itemSelect = document.getElementById('stock-out-item');
-  const variantSelect = document.getElementById('stock-out-variant');
+  const qtyInput = document.getElementById('stock-out-qty');
+  const unitPriceInput = document.getElementById('stock-out-unit-price');
+  const totalAmountInput = document.getElementById('stock-out-total-amount');
+  const customerInput = document.getElementById('stock-out-customer');
+  const refInput = document.getElementById('stock-out-ref');
+  const generateInvoiceBtn = document.getElementById('stock-out-generate-invoice-btn');
 
+  const updateStockOutTotal = () => {
+    const qty = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitPriceInput.value) || 0;
+    totalAmountInput.value = (qty * unitPrice).toFixed(2);
+  };
+
+  qtyInput.addEventListener('input', updateStockOutTotal);
+  unitPriceInput.addEventListener('input', updateStockOutTotal);
   datetimeInput.value = getLocalDatetimeString();
 
   itemSelect.addEventListener('change', () => {
     const selectedId = itemSelect.value;
-    variantSelect.innerHTML = '<option value="">-- Select Variant --</option>';
-
     if (selectedId) {
       const item = allItemsCache.find(i => i.id === Number(selectedId));
-      if (item && item.variants) {
-        item.variants.forEach(v => {
-          const opt = document.createElement('option');
-          opt.value = `${v.size}|${v.color}`;
-          opt.textContent = `${v.size} / ${v.color} (${v.stockQuantity} pcs available)`;
-          variantSelect.appendChild(opt);
-        });
+      if (item) {
+        if (item.unitPrice) {
+          unitPriceInput.value = item.unitPrice;
+        }
       }
     }
+    updateStockOutTotal();
   });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const itemId = itemSelect.value;
     const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
-    const customerName = document.getElementById('stock-out-customer').value.trim();
-    const referenceNo = document.getElementById('stock-out-ref').value.trim();
-    const variantVal = variantSelect.value;
-    const quantity = parseInt(document.getElementById('stock-out-qty').value);
+    const customerName = customerInput.value.trim();
+    const referenceNo = refInput.value.trim();
+    const quantity = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitPriceInput.value) || 0;
     const reasonCode = document.getElementById('stock-out-reason').value;
     const notes = document.getElementById('stock-out-notes').value.trim();
 
-    if (!variantVal) {
-      alert('Please select a valid size/color variant.');
+    if (!itemId || !quantity || !unitPrice) {
+      alert('Please complete all required stock-out fields before submitting.');
       return;
     }
 
-    const [size, color] = variantVal.split('|');
-
     try {
-      await processStockOut({ itemId, timestamp, customerName, referenceNo, size, color, quantity, reasonCode, notes });
-      alert(`Stock-Out Logged Successfully! Deducted ${quantity} pcs (${size}/${color}).`);
+      await processStockOut({ itemId, timestamp, customerName, referenceNo, quantity, unitPrice, reasonCode, notes });
+      alert(`Stock-Out Logged Successfully! Deducted ${quantity} pcs.`);
       form.reset();
       datetimeInput.value = getLocalDatetimeString();
       await refreshAllData();
     } catch (err) {
       alert(`Stock-Out Error: ${err.message}`);
     }
+  });
+
+  generateInvoiceBtn.addEventListener('click', () => {
+    const itemId = itemSelect.value;
+    const selectedItem = allItemsCache.find(i => i.id === Number(itemId));
+    if (!itemId || !selectedItem) {
+      alert('Please choose a dress item before generating an invoice.');
+      return;
+    }
+
+    const quantity = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitPriceInput.value) || 0;
+    const totalAmount = quantity * unitPrice;
+    const partyName = customerInput.value.trim() || 'Customer';
+    const referenceNo = refInput.value.trim() || 'N/A';
+    const date = datetimeInput.value ? new Date(datetimeInput.value) : new Date();
+
+    openInvoiceModal({
+      type: 'OUT',
+      title: 'Stock-Out Invoice',
+      itemName: selectedItem.name,
+      partyName,
+      referenceNo,
+      quantity,
+      unitPrice,
+      totalAmount,
+      date,
+      notes: document.getElementById('stock-out-notes').value.trim(),
+      description: 'Item sold or removed from inventory'
+    });
   });
 }
 
@@ -723,8 +775,10 @@ function initReportsHandlers() {
 
   // Search & Filter listeners for reports
   document.getElementById('rpt-stock-search').addEventListener('input', renderReportStock);
-  document.getElementById('rpt-stock-size-filter').addEventListener('change', renderReportStock);
-  document.getElementById('rpt-stock-status-filter').addEventListener('change', renderReportStock);
+  const stockStatusFilter = document.getElementById('rpt-stock-status-filter');
+  if (stockStatusFilter) {
+    stockStatusFilter.addEventListener('change', renderReportStock);
+  }
 
   document.getElementById('rpt-movement-search').addEventListener('input', renderReportMovement);
   document.getElementById('rpt-movement-type-filter').addEventListener('change', renderReportMovement);
@@ -743,60 +797,112 @@ function renderReports() {
 }
 
 // Report 1: Real-Time Current Stock Level
+function openInvoiceModal({ type, title, itemName, partyName, referenceNo, quantity, unitPrice, totalAmount, date, notes, description }) {
+  const modal = document.getElementById('invoice-modal');
+  const content = document.getElementById('invoice-content');
+  const invoiceDate = date ? new Date(date) : new Date();
+  const formattedDate = invoiceDate.toLocaleString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+
+  content.innerHTML = `
+    <div style="border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; background: rgba(15, 23, 42, 0.02);">
+      <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 18px;">
+        <div>
+          <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">${title}</div>
+          <div style="font-size: 1.5rem; font-weight: 800; margin-top: 4px;">DressStock Shop</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-weight: 700;">${type === 'IN' ? 'Stock-In' : 'Stock-Out'}</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">${formattedDate}</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
+        <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Item</div><div style="font-weight: 700; margin-top: 4px;">${itemName}</div></div>
+        <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Reference</div><div style="font-weight: 700; margin-top: 4px;">${referenceNo}</div></div>
+        <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">${type === 'IN' ? 'Supplier' : 'Customer'}</div><div style="font-weight: 700; margin-top: 4px;">${partyName}</div></div>
+        <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Status</div><div style="font-weight: 700; margin-top: 4px;">${type === 'IN' ? 'In Stock' : 'Out of Stock'}</div></div>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+        <thead>
+          <tr style="background: rgba(99, 102, 241, 0.08);">
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Description</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Qty</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Unit Price</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 12px; border-bottom: 1px solid var(--border-color);">${description}</td>
+            <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color);">${quantity}</td>
+            <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(unitPrice)}</td>
+            <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color); font-weight: 700;">${formatCurrency(totalAmount)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px;">
+        <div style="color: var(--text-muted); font-size: 0.82rem;">${notes || 'No notes added.'}</div>
+        <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(totalAmount)}</div>
+      </div>
+    </div>
+  `;
+
+  modal.classList.add('active');
+}
+
+function closeInvoiceModal() {
+  document.getElementById('invoice-modal').classList.remove('active');
+}
+
 function renderReportStock() {
   const tbody = document.getElementById('rpt-stock-tbody');
   const searchVal = document.getElementById('rpt-stock-search').value.toLowerCase();
-  const sizeVal = document.getElementById('rpt-stock-size-filter').value;
   const statusVal = document.getElementById('rpt-stock-status-filter').value;
 
   tbody.innerHTML = '';
   const rows = [];
 
   allItemsCache.forEach(item => {
-    (item.variants || []).forEach(v => {
-      const matchesSearch = item.name.toLowerCase().includes(searchVal) || v.color.toLowerCase().includes(searchVal);
-      const matchesSize = !sizeVal || v.size === sizeVal;
-      
-      let matchesStatus = true;
-      if (statusVal === 'in_stock') matchesStatus = v.stockQuantity > 0;
-      if (statusVal === 'low_stock') matchesStatus = v.stockQuantity > 0 && v.stockQuantity <= 15;
-      if (statusVal === 'out_of_stock') matchesStatus = v.stockQuantity === 0;
+    const stockQuantity = Number(item.quantity || 0);
+    const matchesSearch = item.name.toLowerCase().includes(searchVal) || (item.supplierName || '').toLowerCase().includes(searchVal);
 
-      if (matchesSearch && matchesSize && matchesStatus) {
-        rows.push({
-          name: item.name,
-          size: v.size,
-          color: v.color,
-          stockQuantity: v.stockQuantity,
-          unitCost: item.unitCost,
-          wholesalePrice: item.wholesalePrice,
-          subtotalCost: v.stockQuantity * item.unitCost,
-          subtotalWholesale: v.stockQuantity * item.wholesalePrice
-        });
-      }
-    });
+    let matchesStatus = true;
+    if (statusVal === 'in_stock') matchesStatus = stockQuantity > 0;
+    if (statusVal === 'low_stock') matchesStatus = stockQuantity > 0 && stockQuantity <= 15;
+    if (statusVal === 'out_of_stock') matchesStatus = stockQuantity === 0;
+
+    if (matchesSearch && matchesStatus) {
+      rows.push({
+        name: item.name,
+        supplier: item.supplierName || 'General Supplier',
+        stockQuantity,
+        unitPrice: Number(item.unitPrice || 0),
+        totalValue: Number(item.totalValue || 0),
+      });
+    }
   });
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-dim); padding: 24px;">No variant stock records match filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 24px;">No inventory records match filters.</td></tr>';
     return;
   }
 
   rows.forEach(r => {
     const tr = document.createElement('tr');
-    let statusBadge = `<span class="badge badge-in">In Stock</span>`;
-    if (r.stockQuantity === 0) statusBadge = `<span class="badge badge-out">Out of Stock</span>`;
-    else if (r.stockQuantity <= 15) statusBadge = `<span class="badge badge-warning">Low Stock</span>`;
+    let statusBadge = '<span class="badge badge-in">In Stock</span>';
+    if (r.stockQuantity === 0) statusBadge = '<span class="badge badge-out">Out of Stock</span>';
+    else if (r.stockQuantity <= 15) statusBadge = '<span class="badge badge-warning">Low Stock</span>';
 
     tr.innerHTML = `
       <td style="font-weight: 600;">${r.name}</td>
-      <td><span class="variant-pill">${r.size}</span></td>
-      <td>${r.color}</td>
+      <td>${r.supplier}</td>
       <td style="font-weight: 800;">${r.stockQuantity} pcs</td>
-      <td>${formatCurrency(r.unitCost)}</td>
-      <td style="color: var(--accent-primary); font-weight: 600;">${formatCurrency(r.wholesalePrice)}</td>
-      <td>${formatCurrency(r.subtotalCost)}</td>
-      <td>${formatCurrency(r.subtotalWholesale)}</td>
+      <td>${formatCurrency(r.unitPrice)}</td>
+      <td>${formatCurrency(r.totalValue)}</td>
       <td>${statusBadge}</td>
     `;
     tbody.appendChild(tr);
@@ -817,7 +923,7 @@ function renderReportMovement() {
       (tx.customerName && tx.customerName.toLowerCase().includes(searchVal)) ||
       (tx.supplierName && tx.supplierName.toLowerCase().includes(searchVal)) ||
       (tx.referenceNo && tx.referenceNo.toLowerCase().includes(searchVal));
-    
+
     const matchesType = !typeVal || tx.type === typeVal;
     const matchesReason = !reasonVal || tx.reasonCode === reasonVal;
 
@@ -840,10 +946,10 @@ function renderReportMovement() {
       <td style="font-size: 0.825rem; color: var(--text-muted);">${formatDate(tx.timestamp)}</td>
       <td><span class="badge ${badgeClass}">${badgeText}</span></td>
       <td style="font-weight: 600;">${tx.itemName}</td>
-      <td><span class="variant-pill">${tx.size} / ${tx.color}</span></td>
+      <td style="font-size: 0.85rem; color: var(--text-muted);">Single item stock</td>
       <td style="font-weight: 800;">${tx.type === 'IN' ? '+' : '-'}${tx.quantity} pcs</td>
-      <td>${formatCurrency(tx.unitCost)}</td>
-      <td>${formatCurrency(tx.wholesalePrice)}</td>
+      <td>${formatCurrency(Number(tx.unitPrice || 0))}</td>
+      <td>${formatCurrency(Number(tx.totalAmount || 0))}</td>
       <td style="font-size: 0.85rem;">${tx.reasonCode}</td>
       <td style="font-size: 0.85rem; color: var(--text-muted);">${party}${ref}</td>
     `;
@@ -860,9 +966,10 @@ function renderReportValuation() {
   let grandWholesale = 0;
 
   allItemsCache.forEach(item => {
-    const pieces = item.totalStock || 0;
-    const totalCost = pieces * item.unitCost;
-    const totalWholesale = pieces * item.wholesalePrice;
+    const pieces = Number(item.quantity || 0);
+    const unitPrice = Number(item.unitPrice || 0);
+    const totalCost = pieces * unitPrice;
+    const totalWholesale = pieces * unitPrice;
     const profit = totalWholesale - totalCost;
 
     grandCost += totalCost;
@@ -871,10 +978,10 @@ function renderReportValuation() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-weight: 700;">${item.name}</td>
-      <td style="font-size: 0.85rem;">${item.supplierName}</td>
+      <td style="font-size: 0.85rem;">${item.supplierName || 'General Supplier'}</td>
       <td style="font-weight: 800;">${pieces} pcs</td>
-      <td>${formatCurrency(item.unitCost)}</td>
-      <td style="color: var(--accent-primary); font-weight: 600;">${formatCurrency(item.wholesalePrice)}</td>
+      <td>${formatCurrency(unitPrice)}</td>
+      <td style="color: var(--accent-primary); font-weight: 600;">${formatCurrency(totalCost)}</td>
       <td style="font-weight: 600;">${formatCurrency(totalCost)}</td>
       <td style="font-weight: 700;">${formatCurrency(totalWholesale)}</td>
       <td style="color: var(--accent-success); font-weight: 700;">+${formatCurrency(profit)}</td>
@@ -904,22 +1011,14 @@ function downloadCSV(csvContent, filename) {
 }
 
 function exportStockCSV() {
-  const exportData = [];
-  allItemsCache.forEach(item => {
-    (item.variants || []).forEach(v => {
-      exportData.push({
-        'Item Name': item.name,
-        'Supplier': item.supplierName,
-        'Size': v.size,
-        'Color': v.color,
-        'Available Stock (Pieces)': v.stockQuantity,
-        'Unit Cost ($)': item.unitCost,
-        'Wholesale Price ($)': item.wholesalePrice,
-        'Subtotal Cost ($)': v.stockQuantity * item.unitCost,
-        'Subtotal Wholesale ($)': v.stockQuantity * item.wholesalePrice
-      });
-    });
-  });
+  const exportData = allItemsCache.map(item => ({
+    'Item Name': item.name,
+    'Supplier': item.supplierName || 'General Supplier',
+    'Available Stock (Pieces)': Number(item.quantity || 0),
+    'Unit Price (LKR)': Number(item.unitPrice || 0),
+    'Total Stock Value (LKR)': Number(item.totalValue || 0),
+    'Description': item.description || ''
+  }));
 
   const csv = Papa.unparse(exportData);
   downloadCSV(csv, `dress_stock_levels_${new Date().toISOString().slice(0, 10)}.csv`);
@@ -930,11 +1029,9 @@ function exportMovementCSV() {
     'Date & Time': formatDate(tx.timestamp),
     'Type': tx.type,
     'Item Name': tx.itemName,
-    'Size': tx.size,
-    'Color': tx.color,
     'Quantity (Pieces)': tx.quantity,
-    'Unit Cost ($)': tx.unitCost,
-    'Wholesale Price ($)': tx.wholesalePrice,
+    'Unit Price (LKR)': Number(tx.unitPrice || 0),
+    'Total Amount (LKR)': Number(tx.totalAmount || 0),
     'Reason Code': tx.reasonCode,
     'Customer / Retailer': tx.customerName || 'N/A',
     'Supplier / Vendor': tx.supplierName || 'N/A',
@@ -951,12 +1048,10 @@ function exportValuationCSV() {
     'Dress Item Name': item.name,
     'Supplier Name': item.supplierName,
     'Supplier Contact': item.supplierContact || '',
-    'Total Stock (Pieces)': item.totalStock,
-    'Unit Purchase Cost ($)': item.unitCost,
-    'Wholesale Selling Price ($)': item.wholesalePrice,
-    'Total Inventory Cost Value ($)': item.totalStock * item.unitCost,
-    'Total Wholesale Sales Potential ($)': item.totalStock * item.wholesalePrice,
-    'Projected Profit ($)': (item.totalStock * item.wholesalePrice) - (item.totalStock * item.unitCost)
+    'Total Stock (Pieces)': Number(item.quantity || 0),
+    'Unit Purchase Cost (LKR)': Number(item.unitPrice || 0),
+    'Total Inventory Cost Value (LKR)': Number(item.totalValue || 0),
+    'Description': item.description || ''
   }));
 
   const csv = Papa.unparse(exportData);
