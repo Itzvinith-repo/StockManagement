@@ -12,6 +12,8 @@ import {
   processStockOut, 
   getAllTransactions, 
   clearAllTransactions,
+  recordStockCorrection,
+  getSupplierDailyStockInSummary,
   exportDatabaseJSON, 
   importDatabaseJSON 
 } from './db.js';
@@ -794,6 +796,47 @@ function initReportsHandlers() {
   document.getElementById('rpt-movement-search').addEventListener('input', renderReportMovement);
   document.getElementById('rpt-movement-type-filter').addEventListener('change', renderReportMovement);
   document.getElementById('rpt-movement-reason-filter').addEventListener('change', renderReportMovement);
+  document.getElementById('rpt-supplier-summary-filter').addEventListener('change', renderSupplierDailySummary);
+  document.getElementById('rpt-daily-date-filter').addEventListener('change', renderSupplierDailySummary);
+  document.getElementById('generate-supplier-invoice-btn').addEventListener('click', generateSupplierInvoice);
+
+  const movementTable = document.getElementById('rpt-movement-tbody');
+  if (movementTable) {
+    movementTable.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.reverse-stock-btn');
+      if (!btn) return;
+
+      const txId = Number(btn.getAttribute('data-tx-id'));
+      const itemId = Number(btn.getAttribute('data-item-id'));
+      const qty = Number(btn.getAttribute('data-qty')) || 0;
+      const itemName = btn.getAttribute('data-item-name');
+      const supplierName = btn.getAttribute('data-supplier-name') || '';
+      const refNo = btn.getAttribute('data-reference-no') || 'N/A';
+
+      const tx = allTransactionsCache.find(entry => Number(entry.id) === txId);
+      if (!tx) return;
+
+      const confirmMessage = `This will add ${qty} piece(s) back into stock for ${itemName} and keep the original mistaken stock-out record in the log for audit purposes.`;
+      if (!confirm(confirmMessage)) return;
+
+      try {
+        await recordStockCorrection({
+          itemId,
+          quantity: qty,
+          reasonCode: 'Stock Correction / Restock',
+          notes: `Restock to fix mistaken stock-out on ${tx.referenceNo || 'manual correction'}.`,
+          timestamp: new Date().toISOString(),
+          supplierName,
+          customerName: tx.customerName || '',
+          referenceNo: refNo,
+        });
+        await refreshAllData();
+        alert(`✅ ${qty} piece(s) of ${itemName} have been restocked successfully.`);
+      } catch (err) {
+        alert(`Failed to restock item: ${err.message}`);
+      }
+    });
+  }
 
   // CSV Export Listeners
   document.getElementById('export-stock-csv').addEventListener('click', exportStockCSV);
@@ -805,6 +848,15 @@ function renderReports() {
   renderReportStock();
   renderReportMovement();
   renderReportValuation();
+
+  const dateFilter = document.getElementById('rpt-daily-date-filter');
+  if (dateFilter && !dateFilter.value) {
+    dateFilter.value = new Date().toISOString().slice(0, 10);
+  }
+
+  if (document.getElementById('rpt-supplier-summary-filter')) {
+    populateItemDropdowns();
+  }
 }
 
 // Report 1: Real-Time Current Stock Level
@@ -942,7 +994,8 @@ function renderReportMovement() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-dim); padding: 24px;">No movement transactions found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 24px;">No movement transactions found.</td></tr>';
+    renderSupplierDailySummary();
     return;
   }
 
@@ -952,6 +1005,7 @@ function renderReportMovement() {
     const badgeText = tx.type === 'IN' ? 'Stock-In' : 'Stock-Out';
     const party = tx.type === 'IN' ? (tx.supplierName || 'N/A') : (tx.customerName || 'N/A');
     const ref = tx.referenceNo && tx.referenceNo !== 'N/A' ? ` (Ref: ${tx.referenceNo})` : '';
+    const canReverse = tx.type === 'OUT';
 
     tr.innerHTML = `
       <td style="font-size: 0.825rem; color: var(--text-muted);">${formatDate(tx.timestamp)}</td>
@@ -963,9 +1017,128 @@ function renderReportMovement() {
       <td>${formatCurrency(Number(tx.totalAmount || 0))}</td>
       <td style="font-size: 0.85rem;">${tx.reasonCode}</td>
       <td style="font-size: 0.85rem; color: var(--text-muted);">${party}${ref}</td>
+      <td>
+        ${canReverse ? `<button class="btn btn-secondary btn-sm reverse-stock-btn" data-tx-id="${tx.id}" data-item-id="${tx.itemId || ''}" data-qty="${tx.quantity}" data-item-name="${(tx.itemName || '').replace(/"/g, '&quot;')}" data-supplier-name="${(tx.supplierName || '').replace(/"/g, '&quot;')}" data-reference-no="${(tx.referenceNo || '').replace(/"/g, '&quot;')}">Restock</button>` : '<span style="color: var(--text-dim); font-size: 0.8rem;">Locked</span>'}
+      </td>
     `;
     tbody.appendChild(tr);
   });
+
+  renderSupplierDailySummary();
+}
+
+async function renderSupplierDailySummary() {
+  const supplierFilter = document.getElementById('rpt-supplier-summary-filter');
+  const dateFilter = document.getElementById('rpt-daily-date-filter');
+  const container = document.getElementById('daily-supplier-summary');
+
+  if (!supplierFilter || !dateFilter || !container) return;
+
+  const summary = await getSupplierDailyStockInSummary({
+    supplierName: supplierFilter.value,
+    date: dateFilter.value,
+  });
+
+  if (!summary.length) {
+    container.innerHTML = '<div style="padding: 18px; color: var(--text-dim);">No supplier stock-in data found for the selected date and supplier.</div>';
+    return;
+  }
+
+  const rowsHtml = summary.map(row => `
+    <tr>
+      <td>${row.date}</td>
+      <td>${row.supplierName}</td>
+      <td>${row.transactionCount}</td>
+      <td>${row.totalQty}</td>
+      <td>${formatCurrency(row.totalAmount)}</td>
+      <td>${row.items.map(item => `${item.itemName} (${item.quantity} pcs)`).join('<br>')}</td>
+    </tr>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Supplier</th>
+            <th>Stock-In Entries</th>
+            <th>Total Qty</th>
+            <th>Total Amount</th>
+            <th>Item Details</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function generateSupplierInvoice() {
+  const supplierFilter = document.getElementById('rpt-supplier-summary-filter');
+  const dateFilter = document.getElementById('rpt-daily-date-filter');
+  const selectedSupplier = supplierFilter.value;
+  const selectedDate = dateFilter.value;
+
+  const summary = await getSupplierDailyStockInSummary({
+    supplierName: selectedSupplier,
+    date: selectedDate,
+  });
+
+  if (!summary.length) {
+    alert('No stock-in data found for the selected supplier and date.');
+    return;
+  }
+
+  const selectedRow = summary[0];
+  const fiscalDate = selectedRow.date || selectedDate || new Date().toISOString().slice(0, 10);
+  const supplierTitle = selectedRow.supplierName || selectedSupplier || 'All Suppliers';
+
+  const bodyRows = selectedRow.items.map(item => `
+    <tr>
+      <td>${item.itemName}</td>
+      <td>${item.quantity}</td>
+      <td>${formatCurrency(item.unitPrice)}</td>
+      <td>${formatCurrency(item.totalAmount)}</td>
+      <td>${item.referenceNo || 'N/A'}</td>
+    </tr>
+  `).join('');
+
+  const modalContent = `
+    <div style="border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; background: rgba(15, 23, 42, 0.02);">
+      <div style="display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 20px;">
+        <div>
+          <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Supplier Daily Stock-In Invoice</div>
+          <div style="font-size: 1.5rem; font-weight: 800; margin-top: 4px;">DressStock Shop</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-weight: 700;">${supplierTitle}</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">${fiscalDate}</div>
+        </div>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+        <thead>
+          <tr style="background: rgba(99, 102, 241, 0.08);">
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Item</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Qty</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Unit Price</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Amount</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Ref #</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px;">
+        <div style="color: var(--text-muted); font-size: 0.82rem;">Total stock-in entries: ${selectedRow.transactionCount}</div>
+        <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(selectedRow.totalAmount)}</div>
+      </div>
+    </div>
+  `;
+
+  const modal = document.getElementById('invoice-modal');
+  const content = document.getElementById('invoice-content');
+  content.innerHTML = modalContent;
+  modal.classList.add('active');
 }
 
 // Report 3: Stock Valuation Report

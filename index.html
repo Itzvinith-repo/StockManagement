@@ -484,12 +484,32 @@
                     <th>Wholesale Price</th>
                     <th>Reason / Action</th>
                     <th>Party / Reference</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="rpt-movement-tbody">
-                  <tr><td colspan="9" style="text-align: center; color: var(--text-dim);">Loading transaction logs...</td></tr>
+                  <tr><td colspan="10" style="text-align: center; color: var(--text-dim);">Loading transaction logs...</td></tr>
                 </tbody>
               </table>
+            </div>
+
+            <div class="card" style="margin-top: 18px;">
+              <div class="card-header">
+                <div>
+                  <h3 class="card-title">Supplier Daily Stock-In Summary</h3>
+                  <p style="font-size: 0.85rem; color: var(--text-muted);">Daily receiving summary by supplier for invoice generation.</p>
+                </div>
+                <button class="btn btn-success btn-sm" id="generate-supplier-invoice-btn">Generate Supplier Invoice</button>
+              </div>
+
+              <div class="filter-bar">
+                <select id="rpt-supplier-summary-filter" class="form-control" style="max-width: 240px;">
+                  <option value="">All Suppliers</option>
+                </select>
+                <input type="date" id="rpt-daily-date-filter" class="form-control" style="max-width: 210px;">
+              </div>
+
+              <div id="daily-supplier-summary" class="table-responsive"></div>
             </div>
           </div>
 

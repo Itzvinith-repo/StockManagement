@@ -384,6 +384,143 @@ export async function getAllTransactions() {
   return getLocalTransactions();
 }
 
+export async function recordStockCorrection({
+  itemId,
+  quantity,
+  reasonCode = 'Stock Correction / Restock',
+  notes = '',
+  timestamp = new Date().toISOString(),
+  supplierName = '',
+  customerName = '',
+  referenceNo = 'N/A',
+}) {
+  const qty = Number(quantity) || 0;
+  const itemIdNum = Number(itemId);
+  if (!itemIdNum) throw new Error('Valid item is required for correction.');
+  if (qty <= 0) throw new Error('Correction quantity must be greater than zero.');
+
+  if (isSupabaseConfigured()) {
+    const { data: item, error: itemError } = await supabase
+      .from('items')
+      .select('*')
+      .eq('id', itemIdNum)
+      .single();
+
+    if (itemError) throw itemError;
+    if (!item) throw new Error('Dress item not found.');
+
+    const nextQty = Number(item.quantity || 0) + qty;
+    const unitPrice = Number(item.unit_price || 0);
+    const nextTotalValue = nextQty * unitPrice;
+
+    const { error: updateError } = await supabase
+      .from('items')
+      .update({
+        quantity: nextQty,
+        total_value: nextTotalValue,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', itemIdNum);
+
+    if (updateError) throw updateError;
+
+    const { error: transactionError } = await supabase.from('transactions').insert([{
+      type: 'IN',
+      transaction_time: timestamp,
+      item_id: itemIdNum,
+      item_name: item.name,
+      supplier_name: supplierName || item.supplier_name || '',
+      customer_name: customerName || '',
+      reference_no: referenceNo || 'N/A',
+      quantity: qty,
+      unit_price: unitPrice,
+      total_amount: qty * unitPrice,
+      reason_code: reasonCode || 'Stock Correction / Restock',
+      notes: notes || 'Stock correction / restock to fix a mistaken stock-out.',
+    }]);
+
+    if (transactionError) throw transactionError;
+    return;
+  }
+
+  return await db.transaction('rw', db.items, db.transactions, async () => {
+    const item = await db.items.get(itemIdNum);
+    if (!item) throw new Error('Dress item not found.');
+
+    const nextQty = Number(item.quantity || 0) + qty;
+    const unitPrice = Number(item.unitPrice || 0);
+    await db.items.update(itemIdNum, {
+      quantity: nextQty,
+      totalValue: nextQty * unitPrice,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await db.transactions.add({
+      type: 'IN',
+      timestamp,
+      itemId: itemIdNum,
+      itemName: item.name,
+      supplierName: supplierName || item.supplierName || '',
+      customerName: customerName || '',
+      referenceNo: referenceNo || 'N/A',
+      quantity: qty,
+      unitPrice,
+      totalAmount: qty * unitPrice,
+      reasonCode: reasonCode || 'Stock Correction / Restock',
+      notes: notes || 'Stock correction / restock to fix a mistaken stock-out.',
+      description: item.description || '',
+    });
+  });
+}
+
+export async function getSupplierDailyStockInSummary({ supplierName = '', date = '' } = {}) {
+  const transactions = await getAllTransactions();
+
+  const filtered = transactions.filter(tx => {
+    if (tx.type !== 'IN') return false;
+    const txDate = new Date(tx.timestamp || new Date()).toISOString().slice(0, 10);
+
+    const matchesSupplier = !supplierName || (tx.supplierName || '').toLowerCase() === supplierName.toLowerCase();
+    const matchesDate = !date || txDate === date;
+    return matchesSupplier && matchesDate;
+  });
+
+  const groups = new Map();
+  filtered.forEach(tx => {
+    const txDate = new Date(tx.timestamp || new Date()).toISOString().slice(0, 10);
+    const key = `${txDate}::${(tx.supplierName || 'General Supplier').trim() || 'General Supplier'}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        date: txDate,
+        supplierName: tx.supplierName || 'General Supplier',
+        transactions: [],
+      });
+    }
+    groups.get(key).transactions.push(tx);
+  });
+
+  return [...groups.values()].map(group => {
+    const totalQty = group.transactions.reduce((sum, tx) => sum + Number(tx.quantity || 0), 0);
+    const totalAmount = group.transactions.reduce((sum, tx) => sum + Number(tx.totalAmount || 0), 0);
+    return {
+      date: group.date,
+      supplierName: group.supplierName,
+      totalQty,
+      totalAmount,
+      transactionCount: group.transactions.length,
+      items: group.transactions.map(tx => ({
+        itemName: tx.itemName || 'Dress Item',
+        quantity: Number(tx.quantity || 0),
+        unitPrice: Number(tx.unitPrice || 0),
+        totalAmount: Number(tx.totalAmount || 0),
+        referenceNo: tx.referenceNo || 'N/A',
+        notes: tx.notes || '',
+        time: tx.timestamp,
+      })),
+    };
+  });
+}
+
 export async function clearAllTransactions() {
   if (isSupabaseConfigured()) {
     const { error } = await supabase.from('transactions').delete().neq('id', 0);
