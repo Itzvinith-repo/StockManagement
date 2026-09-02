@@ -290,7 +290,6 @@ export async function processStockIn(data) {
       reasonCode: data.reasonCode || 'Stock Receiving',
       notes: data.notes || '',
       description: item.description || '',
-      description: item.description || '',
     });
   });
 }
@@ -335,7 +334,6 @@ export async function processStockOut(data) {
       total_amount: qty * unitPrice,
       reason_code: data.reasonCode || 'Wholesale Customer Sale',
       notes: data.notes || '',
-      description: item.description || '',
     }]);
 
     if (transactionError) throw transactionError;
