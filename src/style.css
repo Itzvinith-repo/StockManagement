@@ -279,6 +279,40 @@ body {
   white-space: nowrap;
 }
 
+.transaction-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.transaction-detail-grid > div {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+.transaction-detail-grid span {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.transaction-detail-wide {
+  grid-column: 1 / -1;
+}
+
+.transaction-edit-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 18px;
+}
+
 @media (max-width: 700px) {
   .invoice-controls {
     grid-template-columns: 1fr;
@@ -286,6 +320,15 @@ body {
 
   .supplier-history-table {
     min-width: 620px;
+  }
+
+  .transaction-detail-grid,
+  .transaction-edit-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-detail-wide {
+    grid-column: auto;
   }
 }
 

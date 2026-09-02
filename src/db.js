@@ -384,6 +384,31 @@ export async function getAllTransactions() {
   return getLocalTransactions();
 }
 
+export async function updateTransactionSupplierAndDate(id, { supplierName, date }) {
+  const transactionId = Number(id);
+  const normalizedSupplier = String(supplierName || '').trim();
+  if (!transactionId) throw new Error('Valid transaction is required.');
+  if (!normalizedSupplier) throw new Error('Supplier name is required.');
+  if (!date) throw new Error('Transaction date is required.');
+
+  const timestamp = new Date(`${date}T12:00:00`).toISOString();
+
+  if (isSupabaseConfigured()) {
+    const { error } = await supabase.from('transactions').update({
+      supplier_name: normalizedSupplier,
+      transaction_time: timestamp,
+    }).eq('id', transactionId);
+    if (error) throw error;
+    return;
+  }
+
+  const updated = await db.transactions.update(transactionId, {
+    supplierName: normalizedSupplier,
+    timestamp,
+  });
+  if (!updated) throw new Error('Transaction not found.');
+}
+
 export async function recordStockCorrection({
   itemId,
   quantity,

@@ -11,6 +11,7 @@ import {
   processStockIn, 
   processStockOut, 
   getAllTransactions, 
+  updateTransactionSupplierAndDate,
   clearAllTransactions,
   recordStockCorrection,
   getSupplierDailyStockInSummary,
@@ -517,6 +518,10 @@ function initModalHandlers() {
   const invoiceCloseBtn = document.getElementById('invoice-modal-close');
   const invoiceCloseFooterBtn = document.getElementById('invoice-modal-close-btn');
   const printInvoiceBtn = document.getElementById('invoice-print-btn');
+  const transactionDetailModal = document.getElementById('transaction-detail-modal');
+  const transactionDetailClose = document.getElementById('transaction-detail-close');
+  const transactionDetailCancel = document.getElementById('transaction-detail-cancel');
+  const transactionDetailSave = document.getElementById('transaction-detail-save');
 
   addBtn.addEventListener('click', () => openDressModal(null));
   closeBtn.addEventListener('click', closeDressModal);
@@ -527,6 +532,12 @@ function initModalHandlers() {
   invoiceModal.addEventListener('click', (e) => {
     if (e.target === invoiceModal) closeInvoiceModal();
   });
+  transactionDetailClose.addEventListener('click', closeTransactionDetailModal);
+  transactionDetailCancel.addEventListener('click', closeTransactionDetailModal);
+  transactionDetailModal.addEventListener('click', (e) => {
+    if (e.target === transactionDetailModal) closeTransactionDetailModal();
+  });
+  transactionDetailSave.addEventListener('click', saveTransactionDetail);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -844,6 +855,13 @@ function initReportsHandlers() {
   const movementTable = document.getElementById('rpt-movement-tbody');
   if (movementTable) {
     movementTable.addEventListener('click', async (e) => {
+      const viewBtn = e.target.closest('.view-transaction-btn');
+      if (viewBtn) {
+        const tx = allTransactionsCache.find(entry => Number(entry.id) === Number(viewBtn.dataset.txId));
+        if (tx) openTransactionDetailModal(tx);
+        return;
+      }
+
       const btn = e.target.closest('.reverse-stock-btn');
       if (!btn) return;
 
@@ -959,6 +977,67 @@ function openInvoiceModal({ type, title, itemName, partyName, referenceNo, quant
 
 function closeInvoiceModal() {
   document.getElementById('invoice-modal').classList.remove('active');
+}
+
+function openTransactionDetailModal(tx) {
+  const modal = document.getElementById('transaction-detail-modal');
+  const content = document.getElementById('transaction-detail-content');
+  const dateValue = tx.timestamp ? new Date(tx.timestamp).toISOString().slice(0, 10) : '';
+  const partyLabel = tx.type === 'IN' ? 'Supplier' : 'Customer';
+  const partyValue = tx.type === 'IN' ? (tx.supplierName || 'N/A') : (tx.customerName || 'N/A');
+
+  content.innerHTML = `
+    <div class="transaction-detail-grid">
+      <div><span>Transaction type</span><strong>${tx.type === 'IN' ? 'Stock-In' : 'Stock-Out'}</strong></div>
+      <div><span>Item name</span><strong>${tx.itemName || 'N/A'}</strong></div>
+      <div><span>${partyLabel}</span><strong>${partyValue}</strong></div>
+      <div><span>Reference</span><strong>${tx.referenceNo || 'N/A'}</strong></div>
+      <div><span>Quantity</span><strong>${tx.quantity} pcs</strong></div>
+      <div><span>Unit price</span><strong>${formatCurrency(tx.unitPrice)}</strong></div>
+      <div><span>Total amount</span><strong>${formatCurrency(tx.totalAmount)}</strong></div>
+      <div><span>Reason</span><strong>${tx.reasonCode || 'N/A'}</strong></div>
+      <div class="transaction-detail-wide"><span>Notes</span><strong>${tx.notes || 'No notes added.'}</strong></div>
+    </div>
+    <div class="transaction-edit-fields">
+      <div class="form-group">
+        <label for="transaction-edit-supplier">Supplier name</label>
+        <input id="transaction-edit-supplier" class="form-control form-control-simple" value="${escapeHtml(tx.supplierName || '')}" required>
+      </div>
+      <div class="form-group">
+        <label for="transaction-edit-date">Transaction date</label>
+        <input type="date" id="transaction-edit-date" class="form-control form-control-simple" value="${dateValue}" required>
+      </div>
+    </div>
+  `;
+  modal.dataset.transactionId = tx.id;
+  modal.classList.add('active');
+  refreshIcons();
+}
+
+async function saveTransactionDetail() {
+  const modal = document.getElementById('transaction-detail-modal');
+  const transactionId = Number(modal.dataset.transactionId);
+  const supplierName = document.getElementById('transaction-edit-supplier').value.trim();
+  const date = document.getElementById('transaction-edit-date').value;
+
+  try {
+    await updateTransactionSupplierAndDate(transactionId, { supplierName, date });
+    closeTransactionDetailModal();
+    await refreshAllData();
+    alert('Transaction supplier and date updated everywhere.');
+  } catch (err) {
+    alert(`Failed to update transaction: ${err.message}`);
+  }
+}
+
+function closeTransactionDetailModal() {
+  document.getElementById('transaction-detail-modal').classList.remove('active');
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[character]));
 }
 
 function renderInvoiceList() {
@@ -1298,7 +1377,7 @@ function renderReportMovement() {
       <td style="font-size: 0.85rem;">${tx.reasonCode}</td>
       <td style="font-size: 0.85rem; color: var(--text-muted);">${party}${ref}</td>
       <td>
-        <button class="btn btn-secondary btn-sm invoice-link-btn" data-invoice-id="${tx.id}" data-invoice-type="${tx.type}" style="margin-right: 6px;">View</button>
+        <button class="btn btn-secondary btn-sm view-transaction-btn" data-tx-id="${tx.id}" style="margin-right: 6px;">View Details</button>
         ${canReverse ? `<button class="btn btn-secondary btn-sm reverse-stock-btn" data-tx-id="${tx.id}" data-item-id="${tx.itemId || ''}" data-qty="${tx.quantity}" data-item-name="${(tx.itemName || '').replace(/"/g, '&quot;')}" data-supplier-name="${(tx.supplierName || '').replace(/"/g, '&quot;')}" data-reference-no="${(tx.referenceNo || '').replace(/"/g, '&quot;')}">Restock</button>` : '<span style="color: var(--text-dim); font-size: 0.8rem;">Locked</span>'}
       </td>
     `;

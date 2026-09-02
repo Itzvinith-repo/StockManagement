@@ -753,6 +753,20 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="transaction-detail-modal">
+    <div class="modal-container" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Transaction Details</h3>
+        <button class="modal-close" id="transaction-detail-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body" id="transaction-detail-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="transaction-detail-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="transaction-detail-save">Save Supplier and Date</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MAIN SCRIPT ENTRYPOINT -->
   <script type="module" src="/src/main.js"></script>
 </body>
