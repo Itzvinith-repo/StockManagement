@@ -171,6 +171,69 @@ export async function addVendor({ name, contact = '' }) {
   });
 }
 
+export async function updateVendor(id, { oldName, name, contact = '' }) {
+  const vendorId = Number(id);
+  const normalizedName = String(name || '').trim();
+  const previousName = String(oldName || '').trim();
+  if (!vendorId || !normalizedName || !previousName) throw new Error('Valid vendor details are required.');
+
+  if (isSupabaseConfigured()) {
+    const duplicate = await supabase.from('vendors').select('id').ilike('name', normalizedName).neq('id', vendorId).maybeSingle();
+    if (duplicate.error) throw duplicate.error;
+    if (duplicate.data) throw new Error('This vendor already exists.');
+
+    const { error: vendorError } = await supabase.from('vendors').update({
+      name: normalizedName,
+      contact: String(contact || '').trim(),
+    }).eq('id', vendorId);
+    if (vendorError) throw vendorError;
+
+    const { error: itemError } = await supabase.from('items').update({ supplier_name: normalizedName, supplier_contact: String(contact || '').trim() }).ilike('supplier_name', previousName);
+    if (itemError) throw itemError;
+    const { error: transactionError } = await supabase.from('transactions').update({ supplier_name: normalizedName }).ilike('supplier_name', previousName);
+    if (transactionError) throw transactionError;
+    return;
+  }
+
+  const duplicate = (await db.vendors.toArray()).find(vendor => vendor.id !== vendorId && vendor.name.toLowerCase() === normalizedName.toLowerCase());
+  if (duplicate) throw new Error('This vendor already exists.');
+  await db.transaction('rw', db.vendors, db.items, db.transactions, async () => {
+    const updated = await db.vendors.update(vendorId, { name: normalizedName, contact: String(contact || '').trim() });
+    if (!updated) throw new Error('Vendor not found.');
+    const items = await db.items.where('supplierName').equals(previousName).toArray();
+    await Promise.all(items.map(item => db.items.update(item.id, { supplierName: normalizedName, supplierContact: String(contact || '').trim() })));
+    const transactions = await db.transactions.where('supplierName').equals(previousName).toArray();
+    await Promise.all(transactions.map(transaction => db.transactions.update(transaction.id, { supplierName: normalizedName })));
+  });
+}
+
+export async function deleteVendor(id, name) {
+  const vendorId = Number(id);
+  const normalizedName = String(name || '').trim();
+  if (!vendorId || !normalizedName) throw new Error('Valid vendor is required.');
+
+  if (isSupabaseConfigured()) {
+    const [{ count: itemCount, error: itemError }, { count: transactionCount, error: transactionError }] = await Promise.all([
+      supabase.from('items').select('id', { count: 'exact', head: true }).ilike('supplier_name', normalizedName),
+      supabase.from('transactions').select('id', { count: 'exact', head: true }).ilike('supplier_name', normalizedName),
+    ]);
+    if (itemError) throw itemError;
+    if (transactionError) throw transactionError;
+    if ((itemCount || 0) > 0 || (transactionCount || 0) > 0) throw new Error('This vendor is linked to stock records and cannot be deleted.');
+    const { error } = await supabase.from('vendors').delete().eq('id', vendorId);
+    if (error) throw error;
+    return;
+  }
+
+  const [itemCount, transactionCount] = await Promise.all([
+    db.items.where('supplierName').equals(normalizedName).count(),
+    db.transactions.where('supplierName').equals(normalizedName).count(),
+  ]);
+  if (itemCount || transactionCount) throw new Error('This vendor is linked to stock records and cannot be deleted.');
+  const deleted = await db.vendors.delete(vendorId);
+  if (!deleted) throw new Error('Vendor not found.');
+}
+
 export async function getItemById(id) {
   if (isSupabaseConfigured()) {
     const itemId = Number(id);

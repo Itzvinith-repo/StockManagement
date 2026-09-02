@@ -6,6 +6,8 @@ import {
   getAllItems, 
   getAllVendors,
   addVendor,
+  updateVendor,
+  deleteVendor,
   getItemById, 
   addDressItem, 
   updateDressItem, 
@@ -34,6 +36,7 @@ let allItemsCache = [];
 let allTransactionsCache = [];
 let allVendorsCache = [];
 let pendingStockInItemId = null;
+let editingVendor = null;
 let currentInvoicePreview = null;
 let currentSupplierSummaryInvoice = null;
 
@@ -596,14 +599,28 @@ function initModalHandlers() {
 function initVendorHandlers() {
   const form = document.getElementById('vendor-form');
   if (!form) return;
+  const submitButton = document.getElementById('vendor-submit-btn');
+  const cancelButton = document.getElementById('vendor-cancel-edit-btn');
+
+  const resetVendorForm = () => {
+    editingVendor = null;
+    form.reset();
+    submitButton.innerHTML = '<i data-lucide="plus"></i> Add Vendor';
+    cancelButton.style.display = 'none';
+    refreshIcons();
+  };
+
+  cancelButton.addEventListener('click', resetVendorForm);
   form.addEventListener('submit', async event => {
     event.preventDefault();
     try {
-      await addVendor({
+      const details = {
         name: document.getElementById('vendor-name').value,
         contact: document.getElementById('vendor-contact').value,
-      });
-      form.reset();
+      };
+      if (editingVendor) await updateVendor(editingVendor.id, { ...details, oldName: editingVendor.name });
+      else await addVendor(details);
+      resetVendorForm();
       await refreshAllData();
     } catch (err) {
       alert(`Failed to add vendor: ${err.message}`);
@@ -615,12 +632,37 @@ function renderVendorCatalog() {
   const tbody = document.getElementById('vendor-table-tbody');
   if (!tbody) return;
   if (!allVendorsCache.length) {
-    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--text-dim); padding: 24px;">No vendors added yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-dim); padding: 24px;">No vendors added yet.</td></tr>';
     return;
   }
   tbody.innerHTML = allVendorsCache.map(vendor => `
-    <tr><td style="font-weight: 700;">${escapeHtml(vendor.name)}</td><td>${escapeHtml(vendor.contact || 'No contact details')}</td></tr>
+    <tr>
+      <td style="font-weight: 700;">${escapeHtml(vendor.name)}</td>
+      <td>${escapeHtml(vendor.contact || 'No contact details')}</td>
+      <td>${typeof vendor.id === 'number' ? `<button class="btn btn-secondary btn-sm edit-vendor-btn" data-vendor-id="${vendor.id}">Edit</button> <button class="btn btn-danger btn-sm delete-vendor-btn" data-vendor-id="${vendor.id}" data-vendor-name="${escapeHtml(vendor.name)}">Delete</button>` : '<span style="color: var(--text-dim); font-size: 0.8rem;">Used in records</span>'}</td>
+    </tr>
   `).join('');
+
+  tbody.querySelectorAll('.edit-vendor-btn').forEach(button => button.addEventListener('click', () => {
+    const vendor = allVendorsCache.find(item => Number(item.id) === Number(button.dataset.vendorId));
+    if (!vendor) return;
+    document.getElementById('vendor-name').value = vendor.name;
+    document.getElementById('vendor-contact').value = vendor.contact || '';
+    document.getElementById('vendor-submit-btn').innerHTML = '<i data-lucide="save"></i> Save Vendor';
+    document.getElementById('vendor-cancel-edit-btn').style.display = 'inline-flex';
+    editingVendor = vendor;
+    refreshIcons();
+  }));
+
+  tbody.querySelectorAll('.delete-vendor-btn').forEach(button => button.addEventListener('click', async () => {
+    if (!confirm(`Delete vendor "${button.dataset.vendorName}"? Existing stock records will be kept.`)) return;
+    try {
+      await deleteVendor(button.dataset.vendorId, button.dataset.vendorName);
+      await refreshAllData();
+    } catch (err) {
+      alert(`Failed to delete vendor: ${err.message}`);
+    }
+  }));
 }
 
 function openDressModal(itemId = null) {

@@ -265,12 +265,15 @@
                 <label for="vendor-contact">Contact details</label>
                 <input id="vendor-contact" class="form-control form-control-simple" placeholder="Phone, email, or contact person">
               </div>
-              <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Add Vendor</button>
+              <div class="vendor-form-actions">
+                <button type="submit" class="btn btn-primary" id="vendor-submit-btn"><i data-lucide="plus"></i> Add Vendor</button>
+                <button type="button" class="btn btn-secondary" id="vendor-cancel-edit-btn" style="display: none;">Cancel</button>
+              </div>
             </form>
             <div class="table-responsive vendor-table-wrap">
               <table class="data-table">
-                <thead><tr><th>Vendor Name</th><th>Contact Details</th></tr></thead>
-                <tbody id="vendor-table-tbody"><tr><td colspan="2" style="text-align: center; color: var(--text-dim);">Loading vendors...</td></tr></tbody>
+                <thead><tr><th>Vendor Name</th><th>Contact Details</th><th>Actions</th></tr></thead>
+                <tbody id="vendor-table-tbody"><tr><td colspan="3" style="text-align: center; color: var(--text-dim);">Loading vendors...</td></tr></tbody>
               </table>
             </div>
           </div>
