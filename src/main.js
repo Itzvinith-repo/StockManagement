@@ -212,13 +212,6 @@ export async function refreshAllData() {
   renderDashboard();
   renderCatalogTable();
   renderReports();
-  renderInvoiceList();
-  if (currentInvoicePreview) {
-    renderInvoiceDetail(currentInvoicePreview);
-  }
-  if (currentSupplierSummaryInvoice) {
-    renderSupplierSummaryDetail(currentSupplierSummaryInvoice);
-  }
   refreshIcons();
 }
 
@@ -269,25 +262,6 @@ function populateItemDropdowns() {
     });
   }
 
-  const supplierSummaryFilter = document.getElementById('rpt-supplier-summary-filter');
-  if (supplierSummaryFilter) {
-    const selectedSupplier = supplierSummaryFilter.value;
-    supplierSummaryFilter.innerHTML = '<option value="">All Suppliers</option>';
-    const supplierNames = [...new Set(allTransactionsCache
-      .filter(tx => tx.type === 'IN' && tx.supplierName)
-      .map(tx => tx.supplierName))];
-
-    supplierNames.forEach(supplier => {
-      const opt = document.createElement('option');
-      opt.value = supplier;
-      opt.textContent = supplier;
-      supplierSummaryFilter.appendChild(opt);
-    });
-
-    if (selectedSupplier) {
-      supplierSummaryFilter.value = selectedSupplier;
-    }
-  }
 }
 
 // Render Dashboard Metrics & Charts
@@ -848,39 +822,28 @@ function initReportsHandlers() {
   document.getElementById('rpt-movement-reason-filter').addEventListener('change', renderReportMovement);
   const supplierSummaryFilter = document.getElementById('rpt-supplier-summary-filter');
   const dailyDateFilter = document.getElementById('rpt-daily-date-filter');
-  if (supplierSummaryFilter) supplierSummaryFilter.addEventListener('change', renderSupplierDailySummary);
+  if (supplierSummaryFilter) {
+    supplierSummaryFilter.addEventListener('input', () => {
+      renderSupplierDailySummary();
+      renderSupplierOverallSummary();
+    });
+  }
   if (dailyDateFilter) dailyDateFilter.addEventListener('change', renderSupplierDailySummary);
   const generateSupplierInvoiceBtn = document.getElementById('generate-supplier-invoice-btn');
   if (generateSupplierInvoiceBtn) generateSupplierInvoiceBtn.addEventListener('click', generateSupplierInvoice);
+  const downloadSupplierHistoryBtn = document.getElementById('download-supplier-history-btn');
+  if (downloadSupplierHistoryBtn) downloadSupplierHistoryBtn.addEventListener('click', downloadSupplierHistory);
   const downloadCurrentInvoiceBtn = document.getElementById('download-current-invoice-btn');
   if (downloadCurrentInvoiceBtn) {
     downloadCurrentInvoiceBtn.addEventListener('click', () => {
-      if (currentInvoicePreview) {
-        printInvoice(currentInvoicePreview);
-      } else if (currentSupplierSummaryInvoice) {
-        printSupplierSummaryInvoice(currentSupplierSummaryInvoice);
-      } else {
-        alert('Select an invoice to download or print.');
-      }
+      if (currentSupplierSummaryInvoice) printSupplierSummaryInvoice(currentSupplierSummaryInvoice);
+      else alert('Generate a supplier invoice first.');
     });
   }
 
   const movementTable = document.getElementById('rpt-movement-tbody');
   if (movementTable) {
     movementTable.addEventListener('click', async (e) => {
-      const invoiceBtn = e.target.closest('.invoice-link-btn');
-      if (invoiceBtn) {
-        const txId = Number(invoiceBtn.getAttribute('data-invoice-id'));
-        const tx = allTransactionsCache.find(entry => Number(entry.id) === txId);
-        if (tx) {
-          currentInvoicePreview = tx;
-          currentSupplierSummaryInvoice = null;
-          document.getElementById('nav-invoices').click();
-          renderInvoiceDetail(tx);
-        }
-        return;
-      }
-
       const btn = e.target.closest('.reverse-stock-btn');
       if (!btn) return;
 
@@ -933,6 +896,7 @@ function renderReports() {
   }
 
   renderSupplierDailySummary();
+  renderSupplierOverallSummary();
 }
 
 // Report 1: Real-Time Current Stock Level
@@ -1106,6 +1070,7 @@ function renderSupplierSummaryDetail(summary) {
   const rows = summary.items.map(item => `
     <tr>
       <td style="padding: 10px; border-bottom: 1px solid var(--border-color);">${item.itemName}</td>
+      <td style="padding: 10px; border-bottom: 1px solid var(--border-color);">${item.time ? new Date(item.time).toLocaleDateString('en-GB') : summary.date}</td>
       <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${item.quantity}</td>
       <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(item.unitPrice)}</td>
       <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(item.totalAmount)}</td>
@@ -1130,9 +1095,10 @@ function renderSupplierSummaryDetail(summary) {
         <thead>
           <tr style="background: rgba(99, 102, 241, 0.08);">
             <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Item</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Date</th>
             <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Qty</th>
             <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Unit Price</th>
-            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Amount</th>
+            <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Line Total</th>
             <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Ref</th>
           </tr>
         </thead>
@@ -1140,7 +1106,7 @@ function renderSupplierSummaryDetail(summary) {
       </table>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-        <div style="color: var(--text-muted); font-size: 0.8rem;">${summary.transactionCount} stock-in entries</div>
+        <div style="color: var(--text-muted); font-size: 0.8rem;">${summary.transactionCount} stock-in entries · ${summary.totalQty} pieces</div>
         <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(summary.totalAmount)}</div>
       </div>
     </div>
@@ -1154,18 +1120,7 @@ function printInvoice(invoice) {
     return;
   }
 
-  const wrapper = document.createElement('div');
-  wrapper.style.position = 'fixed';
-  wrapper.style.left = '-9999px';
-  wrapper.style.top = '0';
-  wrapper.style.width = '800px';
-  wrapper.style.padding = '20px';
-  wrapper.style.background = '#fff';
-  wrapper.style.color = '#000';
-  wrapper.innerHTML = renderInvoiceHtml(target);
-  document.body.appendChild(wrapper);
-  window.print();
-  setTimeout(() => wrapper.remove(), 1000);
+  openPrintDocument(renderInvoiceHtml(target), `Invoice-${target.referenceNo || 'transaction'}`);
 }
 
 function renderInvoiceHtml(invoice) {
@@ -1186,32 +1141,64 @@ function renderInvoiceHtml(invoice) {
 }
 
 function renderSupplierSummaryHtml(summary) {
+  const rows = summary.items.map(item => `
+    <tr>
+      <td>${item.time ? new Date(item.time).toLocaleDateString('en-GB') : summary.date}</td>
+      <td>${item.itemName}</td>
+      <td>${item.quantity}</td>
+      <td>${formatCurrency(item.unitPrice)}</td>
+      <td>${formatCurrency(item.totalAmount)}</td>
+      <td>${item.referenceNo || 'N/A'}</td>
+    </tr>
+  `).join('');
   return `
-    <div style="font-family: Arial, sans-serif; color: #111; padding: 20px;">
-      <h2 style="margin: 0 0 8px;">Supplier Daily Summary Invoice</h2>
-      <div style="font-size: 12px; margin-bottom: 14px;">${summary.supplierName} • ${summary.date}</div>
-      <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-        <tr><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Item</th><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Qty</th><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Unit Price</th><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Total</th></tr>
-        ${summary.items.map(item => `<tr><td style="border: 1px solid #ccc; padding: 8px;">${item.itemName}</td><td style="border: 1px solid #ccc; padding: 8px;">${item.quantity}</td><td style="border: 1px solid #ccc; padding: 8px;">${formatCurrency(item.unitPrice)}</td><td style="border: 1px solid #ccc; padding: 8px;">${formatCurrency(item.totalAmount)}</td></tr>`).join('')}
-      </table>
-      <div style="margin-top: 12px; font-weight: 700; text-align: right;">Total: ${formatCurrency(summary.totalAmount)}</div>
+    <div class="print-invoice">
+      <header class="print-invoice-header"><div><p class="print-kicker">Supplier invoice</p><h1>DressStock Shop</h1><p>Stock-in receipt summary</p></div><div class="print-meta"><strong>${summary.supplierName}</strong><span>Invoice date: ${summary.date}</span></div></header>
+      <table><thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>
+      <footer class="print-invoice-total"><span>${summary.transactionCount} entries · ${summary.totalQty} pieces</span><strong>Total ${formatCurrency(summary.totalAmount)}</strong></footer>
     </div>
   `;
 }
 
 function printSupplierSummaryInvoice(summary) {
-  const wrapper = document.createElement('div');
-  wrapper.style.position = 'fixed';
-  wrapper.style.left = '-9999px';
-  wrapper.style.top = '0';
-  wrapper.style.width = '800px';
-  wrapper.style.padding = '20px';
-  wrapper.style.background = '#fff';
-  wrapper.style.color = '#000';
-  wrapper.innerHTML = renderSupplierSummaryHtml(summary);
-  document.body.appendChild(wrapper);
-  window.print();
-  setTimeout(() => wrapper.remove(), 1000);
+  openPrintDocument(renderSupplierSummaryHtml(summary), `Supplier-Invoice-${summary.supplierName}-${summary.date}`);
+}
+
+function printSupplierHistoryDocument(supplierName, summary) {
+  const rows = summary.flatMap(day => day.items.map(item => `
+    <tr>
+      <td>${day.date}</td>
+      <td>${item.itemName}</td>
+      <td>${item.quantity}</td>
+      <td>${formatCurrency(item.unitPrice)}</td>
+      <td>${formatCurrency(item.totalAmount)}</td>
+      <td>${item.referenceNo || 'N/A'}</td>
+    </tr>
+  `)).join('');
+  const totalQty = summary.reduce((total, row) => total + row.totalQty, 0);
+  const totalAmount = summary.reduce((total, row) => total + row.totalAmount, 0);
+  const html = `<div class="print-invoice">
+    <header class="print-invoice-header"><div><p class="print-kicker">Supplier transaction history</p><h1>DressStock Shop</h1><p>Overall stock-in statement</p></div><div class="print-meta"><strong>${supplierName}</strong><span>All recorded dates</span></div></header>
+    <table><thead><tr><th>Date</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Reference</th></tr></thead><tbody>${rows}</tbody></table>
+    <footer class="print-invoice-total"><span>${totalQty} pieces across ${summary.length} days</span><strong>Total ${formatCurrency(totalAmount)}</strong></footer>
+  </div>`;
+  openPrintDocument(html, `Supplier-History-${supplierName}`);
+}
+
+function openPrintDocument(content, title) {
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    alert('Please allow pop-ups to download the invoice as PDF.');
+    return;
+  }
+  printWindow.document.write(`<!doctype html><html><head><title>${title}</title><meta charset="utf-8"><style>${printDocumentStyles()}</style></head><body>${content}</body></html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.addEventListener('load', () => printWindow.print());
+}
+
+function printDocumentStyles() {
+  return `@page { size: A4; margin: 16mm; } * { box-sizing: border-box; } body { margin: 0; color: #172033; font: 13px Arial, sans-serif; } .print-invoice { width: 100%; } .print-invoice-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1e3a5f; padding-bottom: 22px; margin-bottom: 28px; } h1 { margin: 4px 0; font-size: 28px; letter-spacing: .02em; } p { margin: 0; color: #64748b; } .print-kicker { color: #1e3a5f; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; } .print-meta { display: grid; gap: 5px; text-align: right; font-size: 14px; } .print-meta span { color: #64748b; } table { width: 100%; border-collapse: collapse; } th { background: #e8eef5; color: #233a56; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; } th, td { border-bottom: 1px solid #d9e0e8; padding: 11px 9px; text-align: left; } td:nth-child(3), td:nth-child(4), td:nth-child(5), th:nth-child(3), th:nth-child(4), th:nth-child(5) { text-align: right; } .print-invoice-total { display: flex; justify-content: space-between; border-top: 2px solid #1e3a5f; margin-top: 22px; padding-top: 16px; font-size: 15px; } .print-invoice-total strong { font-size: 20px; }`;
 }
 
 function renderReportStock() {
@@ -1324,55 +1311,44 @@ function renderReportMovement() {
 async function renderSupplierDailySummary() {
   const supplierFilter = document.getElementById('rpt-supplier-summary-filter');
   const dateFilter = document.getElementById('rpt-daily-date-filter');
-  const container = document.getElementById('daily-supplier-summary');
+  const container = document.getElementById('invoice-detail-container');
 
   if (!supplierFilter || !dateFilter || !container) return;
 
+  const supplierName = supplierFilter.value.trim();
+  if (!supplierName || !dateFilter.value) {
+    currentSupplierSummaryInvoice = null;
+    container.innerHTML = '<div class="invoice-empty-state">Enter a supplier name and date to preview an invoice.</div>';
+    return;
+  }
+
   const summary = await getSupplierDailyStockInSummary({
-    supplierName: supplierFilter.value,
+    supplierName,
     date: dateFilter.value,
   });
 
   if (!summary.length) {
-    container.innerHTML = '<div style="padding: 18px; color: var(--text-dim);">No supplier stock-in data found for the selected date and supplier.</div>';
+    currentSupplierSummaryInvoice = null;
+    container.innerHTML = '<div class="invoice-empty-state">No stock-in transactions were found for this supplier on the selected date.</div>';
     return;
   }
 
-  const rowsHtml = summary.map(row => `
-    <tr>
-      <td>${row.date}</td>
-      <td>${row.supplierName}</td>
-      <td>${row.transactionCount}</td>
-      <td>${row.totalQty}</td>
-      <td>${formatCurrency(row.totalAmount)}</td>
-      <td>${row.items.map(item => `${item.itemName} (${item.quantity} pcs)`).join('<br>')}</td>
-    </tr>
-  `).join('');
-
-  container.innerHTML = `
-    <div class="table-responsive">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Supplier</th>
-            <th>Stock-In Entries</th>
-            <th>Total Qty</th>
-            <th>Total Amount</th>
-            <th>Item Details</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-    </div>
-  `;
+  const selectedRow = summary[0];
+  currentInvoicePreview = null;
+  currentSupplierSummaryInvoice = toSupplierInvoice(selectedRow);
+  renderSupplierSummaryDetail(currentSupplierSummaryInvoice);
 }
 
 async function generateSupplierInvoice() {
   const supplierFilter = document.getElementById('rpt-supplier-summary-filter');
   const dateFilter = document.getElementById('rpt-daily-date-filter');
-  const selectedSupplier = supplierFilter.value;
+  const selectedSupplier = supplierFilter.value.trim();
   const selectedDate = dateFilter.value;
+
+  if (!selectedSupplier || !selectedDate) {
+    alert('Enter a supplier name and invoice date first.');
+    return;
+  }
 
   const summary = await getSupplierDailyStockInSummary({
     supplierName: selectedSupplier,
@@ -1386,16 +1362,79 @@ async function generateSupplierInvoice() {
 
   const selectedRow = summary[0];
   currentInvoicePreview = null;
-  currentSupplierSummaryInvoice = {
-    supplierName: selectedRow.supplierName || selectedSupplier || 'All Suppliers',
-    date: selectedRow.date || selectedDate || new Date().toISOString().slice(0, 10),
-    transactionCount: selectedRow.transactionCount,
-    totalAmount: selectedRow.totalAmount,
-    items: selectedRow.items,
-  };
+  currentSupplierSummaryInvoice = toSupplierInvoice(selectedRow);
 
   document.getElementById('nav-invoices').click();
   renderSupplierSummaryDetail(currentSupplierSummaryInvoice);
+}
+
+function toSupplierInvoice(summary) {
+  return {
+    supplierName: summary.supplierName,
+    date: summary.date,
+    transactionCount: summary.transactionCount,
+    totalQty: summary.totalQty,
+    totalAmount: summary.totalAmount,
+    items: summary.items,
+  };
+}
+
+async function renderSupplierOverallSummary() {
+  const supplierFilter = document.getElementById('rpt-supplier-summary-filter');
+  const container = document.getElementById('supplier-overall-summary');
+  if (!supplierFilter || !container) return;
+
+  const supplierName = supplierFilter.value.trim();
+  if (!supplierName) {
+    container.innerHTML = '<div class="invoice-empty-state">Enter a supplier name to view all stock-in transactions across every day.</div>';
+    return;
+  }
+
+  const summary = await getSupplierDailyStockInSummary({ supplierName });
+  if (!summary.length) {
+    container.innerHTML = '<div class="invoice-empty-state">No stock-in transactions were found for this supplier.</div>';
+    return;
+  }
+
+  const totalQty = summary.reduce((total, row) => total + row.totalQty, 0);
+  const totalAmount = summary.reduce((total, row) => total + row.totalAmount, 0);
+  const rows = summary.sort((a, b) => b.date.localeCompare(a.date)).map(row => `
+    <tr>
+      <td>${row.date}</td>
+      <td>${row.items.map(item => `${item.itemName} (${item.quantity} pcs)`).join('<br>')}</td>
+      <td>${row.totalQty} pcs</td>
+      <td>${row.transactionCount}</td>
+      <td>${formatCurrency(row.totalAmount)}</td>
+    </tr>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="supplier-history-summary">
+      <span><strong>${summary.length}</strong> days</span>
+      <span><strong>${totalQty}</strong> pieces received</span>
+      <span><strong>${formatCurrency(totalAmount)}</strong> total received value</span>
+    </div>
+    <table class="data-table supplier-history-table">
+      <thead><tr><th>Date</th><th>Items</th><th>Quantity</th><th>Entries</th><th>Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function downloadSupplierHistory() {
+  const supplierName = document.getElementById('rpt-supplier-summary-filter')?.value.trim();
+  if (!supplierName) {
+    alert('Enter a supplier name first.');
+    return;
+  }
+
+  getSupplierDailyStockInSummary({ supplierName }).then(summary => {
+    if (!summary.length) {
+      alert('No stock-in transactions were found for this supplier.');
+      return;
+    }
+    printSupplierHistoryDocument(supplierName, summary);
+  });
 }
 
 // Report 3: Stock Valuation Report

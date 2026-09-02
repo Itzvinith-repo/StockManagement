@@ -224,6 +224,71 @@ body {
   z-index: 90;
 }
 
+.eyebrow {
+  color: var(--accent-info);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.invoice-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.invoice-helper {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  margin-top: 2px;
+}
+
+.invoice-preview-shell {
+  min-height: 260px;
+  padding: 4px 0;
+}
+
+.invoice-empty-state {
+  border: 1px dashed var(--border-color);
+  color: var(--text-muted);
+  padding: 52px 20px;
+  text-align: center;
+}
+
+.supplier-history-summary {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  padding: 4px 0 16px;
+  margin-bottom: 4px;
+}
+
+.supplier-history-summary strong {
+  color: var(--text-main);
+  font-size: 1.05rem;
+}
+
+.supplier-history-table td,
+.supplier-history-table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .invoice-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .supplier-history-table {
+    min-width: 620px;
+  }
+}
+
 .mobile-nav-toggle {
   display: none;
   background: transparent;
