@@ -36,6 +36,12 @@
           </button>
         </li>
         <li>
+          <button class="nav-btn" data-tab="vendor-tab" id="nav-vendors">
+            <i data-lucide="store"></i>
+            <span>Vendor Catalog</span>
+          </button>
+        </li>
+        <li>
           <button class="nav-btn" data-tab="stock-in-tab" id="nav-stock-in">
             <i data-lucide="arrow-down-left-square"></i>
             <span>Stock-In (Receive)</span>
@@ -240,6 +246,36 @@
           </div>
         </section>
 
+        <!-- VENDOR CATALOG TAB -->
+        <section class="tab-pane" id="vendor-tab">
+          <div class="card vendor-catalog-card">
+            <div class="card-header">
+              <div>
+                <div class="eyebrow">Supplier directory</div>
+                <h3 class="card-title"><i data-lucide="store"></i> Vendor Catalog</h3>
+              </div>
+            </div>
+            <p class="invoice-helper">Add the vendors you work with. They will be available in the dress, stock-in, and stock-out forms.</p>
+            <form id="vendor-form" class="vendor-form">
+              <div class="form-group">
+                <label for="vendor-name">Vendor name *</label>
+                <input id="vendor-name" class="form-control form-control-simple" placeholder="Vendor or supplier name" required>
+              </div>
+              <div class="form-group">
+                <label for="vendor-contact">Contact details</label>
+                <input id="vendor-contact" class="form-control form-control-simple" placeholder="Phone, email, or contact person">
+              </div>
+              <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i> Add Vendor</button>
+            </form>
+            <div class="table-responsive vendor-table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Vendor Name</th><th>Contact Details</th></tr></thead>
+                <tbody id="vendor-table-tbody"><tr><td colspan="2" style="text-align: center; color: var(--text-dim);">Loading vendors...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- STOCK-IN TAB -->
         <section class="tab-pane" id="stock-in-tab">
           <div class="card" style="max-width: 760px; margin: 0 auto 24px;">
@@ -265,7 +301,9 @@
               <div class="form-row">
                 <div class="form-group">
                   <label for="stock-in-supplier">Supplier / Vendor Name *</label>
-                  <input type="text" id="stock-in-supplier" class="form-control form-control-simple" placeholder="Vendor name" required>
+                  <select id="stock-in-supplier" class="form-control form-control-simple" required>
+                    <option value="">-- Choose Vendor --</option>
+                  </select>
                 </div>
 
                 <div class="form-group">
@@ -330,6 +368,13 @@
               </div>
 
               <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-out-supplier">Vendor / Supplier *</label>
+                  <select id="stock-out-supplier" class="form-control form-control-simple" required>
+                    <option value="">-- Choose Vendor --</option>
+                  </select>
+                </div>
+
                 <div class="form-group">
                   <label for="stock-out-customer">Customer / Retailer Name</label>
                   <input type="text" id="stock-out-customer" class="form-control form-control-simple" placeholder="Retailer / Customer Name">
@@ -715,7 +760,9 @@
           <div class="form-row">
             <div class="form-group">
               <label for="dress-supplier-name">Supplier / Vendor Name *</label>
-              <input type="text" id="dress-supplier-name" class="form-control form-control-simple" placeholder="e.g. Elegance Fabrics Ltd." required>
+              <select id="dress-supplier-name" class="form-control form-control-simple" required>
+                <option value="">-- Choose Vendor --</option>
+              </select>
             </div>
             <div class="form-group">
               <label for="dress-supplier-contact">Supplier Contact Details</label>

@@ -8,6 +8,12 @@ db.version(1).stores({
   transactions: '++id, type, timestamp, itemId, itemName, supplierName, customerName, referenceNo, quantity, unitPrice, totalAmount, reasonCode'
 });
 
+db.version(2).stores({
+  items: '++id, name, supplierName, quantity, unitPrice, totalValue, createdAt',
+  transactions: '++id, type, timestamp, itemId, itemName, supplierName, customerName, referenceNo, quantity, unitPrice, totalAmount, reasonCode',
+  vendors: '++id, name, contact, createdAt'
+});
+
 const mapItemRow = (row) => ({
   id: row.id,
   name: row.name,
@@ -105,6 +111,64 @@ export async function getAllItems() {
     return getRemoteItems();
   }
   return getLocalItems();
+}
+
+export async function getAllVendors() {
+  if (isSupabaseConfigured()) {
+    const [{ data: vendors = [], error: vendorError }, { data: items = [], error: itemError }, { data: transactions = [], error: transactionError }] = await Promise.all([
+      supabase.from('vendors').select('*').order('name'),
+      supabase.from('items').select('supplier_name'),
+      supabase.from('transactions').select('supplier_name'),
+    ]);
+    if (vendorError) throw vendorError;
+    if (itemError) throw itemError;
+    if (transactionError) throw transactionError;
+    const names = new Map((vendors || []).map(vendor => [vendor.name.trim().toLowerCase(), {
+      id: vendor.id,
+      name: vendor.name,
+      contact: vendor.contact || '',
+      createdAt: vendor.created_at,
+    }]));
+    [...(items || []), ...(transactions || [])].forEach(row => {
+      const name = (row.supplier_name || '').trim();
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), { id: `legacy-${name}`, name, contact: '' });
+    });
+    return [...names.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const [vendors, items, transactions] = await Promise.all([
+    db.vendors.toArray(),
+    db.items.toArray(),
+    db.transactions.toArray(),
+  ]);
+  const names = new Map(vendors.map(vendor => [vendor.name.trim().toLowerCase(), vendor]));
+  [...items, ...transactions].forEach(row => {
+    const name = (row.supplierName || '').trim();
+    if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), { id: `legacy-${name}`, name, contact: '' });
+  });
+  return [...names.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function addVendor({ name, contact = '' }) {
+  const normalizedName = String(name || '').trim();
+  if (!normalizedName) throw new Error('Vendor name is required.');
+  const existing = (await getAllVendors()).find(vendor => vendor.name.toLowerCase() === normalizedName.toLowerCase());
+  if (existing) throw new Error('This vendor already exists.');
+
+  if (isSupabaseConfigured()) {
+    const { data, error } = await supabase.from('vendors').insert([{
+      name: normalizedName,
+      contact: String(contact || '').trim(),
+    }]).select().single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  return db.vendors.add({
+    name: normalizedName,
+    contact: String(contact || '').trim(),
+    createdAt: new Date().toISOString(),
+  });
 }
 
 export async function getItemById(id) {
@@ -326,7 +390,7 @@ export async function processStockOut(data) {
       transaction_time: timestamp,
       item_id: itemId,
       item_name: item.name,
-      supplier_name: item.supplier_name || '',
+      supplier_name: data.supplierName || item.supplier_name || '',
       customer_name: data.customerName || 'N/A',
       reference_no: data.referenceNo || 'N/A',
       quantity: qty,
@@ -364,7 +428,7 @@ export async function processStockOut(data) {
       timestamp,
       itemId,
       itemName: item.name,
-      supplierName: item.supplierName || '',
+      supplierName: data.supplierName || item.supplierName || '',
       customerName: data.customerName || 'N/A',
       referenceNo: data.referenceNo || 'N/A',
       quantity: qty,
@@ -559,6 +623,7 @@ export async function clearAllTransactions() {
 export async function exportDatabaseJSON(options = {}) {
   const items = await getAllItems();
   const transactions = await getAllTransactions();
+  const vendors = await getAllVendors();
 
   const payload = {
     appName: 'DressStock Shop',
@@ -578,7 +643,13 @@ export async function exportDatabaseJSON(options = {}) {
         createdAt: item.createdAt || new Date().toISOString(),
         updatedAt: item.updatedAt || new Date().toISOString(),
       })),
-      transactions
+      transactions,
+      vendors: vendors.filter(vendor => !String(vendor.id).startsWith('legacy-')).map(vendor => ({
+        id: typeof vendor.id === 'number' ? vendor.id : undefined,
+        name: vendor.name,
+        contact: vendor.contact || '',
+        createdAt: vendor.createdAt || new Date().toISOString(),
+      }))
     }
   };
 
@@ -589,11 +660,16 @@ export async function importDatabaseJSON(jsonString) {
   const data = JSON.parse(jsonString);
   const safeData = data.data || data;
 
-  await db.transaction('rw', db.items, db.transactions, async () => {
+  await db.transaction('rw', db.items, db.transactions, db.vendors, async () => {
     await db.items.clear();
     await db.transactions.clear();
+    await db.vendors.clear();
 
     if (safeData.items) await db.items.bulkAdd(safeData.items);
     if (safeData.transactions) await db.transactions.bulkAdd(safeData.transactions);
+    if (safeData.vendors) await db.vendors.bulkAdd(safeData.vendors.map(vendor => ({
+      ...vendor,
+      id: undefined,
+    })));
   });
 }

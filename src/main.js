@@ -4,6 +4,8 @@ import Papa from 'papaparse';
 import { 
   db, 
   getAllItems, 
+  getAllVendors,
+  addVendor,
   getItemById, 
   addDressItem, 
   updateDressItem, 
@@ -30,6 +32,7 @@ let movementChart = null;
 let currentTab = 'dashboard-tab';
 let allItemsCache = [];
 let allTransactionsCache = [];
+let allVendorsCache = [];
 let pendingStockInItemId = null;
 let currentInvoicePreview = null;
 let currentSupplierSummaryInvoice = null;
@@ -80,6 +83,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 4. Attach Modal & Form handlers
     initModalHandlers();
+    initVendorHandlers();
     initStockInForm();
     initStockOutForm();
     initReportsHandlers();
@@ -191,6 +195,7 @@ function updateHeaderTitle(tabId) {
   const titles = {
     'dashboard-tab': { title: 'Dashboard Overview', desc: 'Real-time stock status, inventory valuation, and recent activity.' },
     'catalog-tab': { title: 'Dress Catalog & Master Profiles', desc: 'Manage dress items, supplier information, unit pricing, and stock totals.' },
+    'vendor-tab': { title: 'Vendor Catalog', desc: 'Maintain the supplier directory used throughout inventory workflows.' },
     'stock-in-tab': { title: 'Stock-In Management (Receiving Goods)', desc: 'Record incoming dress shipments, update unit purchase prices, and auto-update inventory.' },
     'stock-out-tab': { title: 'Stock-Out Management (Sales & Reductions)', desc: 'Log sales, damaged garments, or vendor returns with reference numbers and reason codes.' },
     'invoices-tab': { title: 'Invoice Center', desc: 'View, print, and download all transaction and supplier summary invoices.' },
@@ -206,12 +211,16 @@ function updateHeaderTitle(tabId) {
 
 // Master Refresh Data Engine
 export async function refreshAllData() {
-  allItemsCache = await getAllItems();
-  allTransactionsCache = await getAllTransactions();
+  [allItemsCache, allTransactionsCache, allVendorsCache] = await Promise.all([
+    getAllItems(),
+    getAllTransactions(),
+    getAllVendors(),
+  ]);
 
   populateItemDropdowns();
   renderDashboard();
   renderCatalogTable();
+  renderVendorCatalog();
   renderReports();
   refreshIcons();
 }
@@ -221,6 +230,9 @@ function populateItemDropdowns() {
   const stockInSelect = document.getElementById('stock-in-item');
   const stockOutSelect = document.getElementById('stock-out-item');
   const supplierFilter = document.getElementById('catalog-supplier-filter');
+  const dressSupplierSelect = document.getElementById('dress-supplier-name');
+  const stockInSupplierSelect = document.getElementById('stock-in-supplier');
+  const stockOutSupplierSelect = document.getElementById('stock-out-supplier');
 
   const prevInVal = stockInSelect ? stockInSelect.value : '';
   const prevOutVal = stockOutSelect ? stockOutSelect.value : '';
@@ -232,7 +244,7 @@ function populateItemDropdowns() {
     stockOutSelect.innerHTML = '<option value="">-- Choose Item --</option>';
   }
 
-  const suppliers = new Set();
+  const suppliers = new Set(allVendorsCache.map(vendor => vendor.name));
 
   allItemsCache.forEach(item => {
     const stockQty = Number(item.quantity || 0);
@@ -262,6 +274,19 @@ function populateItemDropdowns() {
       supplierFilter.appendChild(opt);
     });
   }
+
+  [dressSupplierSelect, stockInSupplierSelect, stockOutSupplierSelect].forEach(select => {
+    if (!select) return;
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">-- Choose Vendor --</option>';
+    [...suppliers].sort((a, b) => a.localeCompare(b)).forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      select.appendChild(option);
+    });
+    if (previousValue) select.value = previousValue;
+  });
 
 }
 
@@ -568,6 +593,36 @@ function initModalHandlers() {
   });
 }
 
+function initVendorHandlers() {
+  const form = document.getElementById('vendor-form');
+  if (!form) return;
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    try {
+      await addVendor({
+        name: document.getElementById('vendor-name').value,
+        contact: document.getElementById('vendor-contact').value,
+      });
+      form.reset();
+      await refreshAllData();
+    } catch (err) {
+      alert(`Failed to add vendor: ${err.message}`);
+    }
+  });
+}
+
+function renderVendorCatalog() {
+  const tbody = document.getElementById('vendor-table-tbody');
+  if (!tbody) return;
+  if (!allVendorsCache.length) {
+    tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--text-dim); padding: 24px;">No vendors added yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = allVendorsCache.map(vendor => `
+    <tr><td style="font-weight: 700;">${escapeHtml(vendor.name)}</td><td>${escapeHtml(vendor.contact || 'No contact details')}</td></tr>
+  `).join('');
+}
+
 function openDressModal(itemId = null) {
   const modal = document.getElementById('dress-modal');
   const titleEl = document.getElementById('dress-modal-title');
@@ -708,6 +763,7 @@ function initStockOutForm() {
   const qtyInput = document.getElementById('stock-out-qty');
   const unitPriceInput = document.getElementById('stock-out-unit-price');
   const totalAmountInput = document.getElementById('stock-out-total-amount');
+  const supplierInput = document.getElementById('stock-out-supplier');
   const customerInput = document.getElementById('stock-out-customer');
   const refInput = document.getElementById('stock-out-ref');
   const generateInvoiceBtn = document.getElementById('stock-out-generate-invoice-btn');
@@ -727,6 +783,7 @@ function initStockOutForm() {
     if (selectedId) {
       const item = allItemsCache.find(i => i.id === Number(selectedId));
       if (item) {
+        supplierInput.value = item.supplierName || '';
         if (item.unitPrice) {
           unitPriceInput.value = item.unitPrice;
         }
@@ -739,6 +796,7 @@ function initStockOutForm() {
     e.preventDefault();
     const itemId = itemSelect.value;
     const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+    const supplierName = supplierInput.value.trim();
     const customerName = customerInput.value.trim();
     const referenceNo = refInput.value.trim();
     const quantity = Number(qtyInput.value) || 0;
@@ -746,13 +804,13 @@ function initStockOutForm() {
     const reasonCode = document.getElementById('stock-out-reason').value;
     const notes = document.getElementById('stock-out-notes').value.trim();
 
-    if (!itemId || !quantity || !unitPrice) {
+    if (!itemId || !supplierName || !quantity || !unitPrice) {
       alert('Please complete all required stock-out fields before submitting.');
       return;
     }
 
     try {
-      await processStockOut({ itemId, timestamp, customerName, referenceNo, quantity, unitPrice, reasonCode, notes });
+      await processStockOut({ itemId, timestamp, supplierName, customerName, referenceNo, quantity, unitPrice, reasonCode, notes });
       alert(`Stock-Out Logged Successfully! Deducted ${quantity} pcs.`);
       form.reset();
       datetimeInput.value = getLocalDatetimeString();
@@ -774,6 +832,7 @@ function initStockOutForm() {
     const unitPrice = Number(unitPriceInput.value) || 0;
     const totalAmount = quantity * unitPrice;
     const partyName = customerInput.value.trim() || 'Customer';
+    const supplierName = supplierInput.value.trim() || 'Supplier';
     const referenceNo = refInput.value.trim() || 'N/A';
     const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
 
@@ -782,7 +841,7 @@ function initStockOutForm() {
       type: 'OUT',
       itemName: selectedItem.name,
       itemId: Number(itemId),
-      supplierName: '',
+      supplierName,
       customerName: partyName,
       quantity,
       unitPrice,
