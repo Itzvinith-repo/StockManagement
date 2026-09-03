@@ -129,10 +129,25 @@ export async function getAllVendors() {
       contact: vendor.contact || '',
       createdAt: vendor.created_at,
     }]));
+    const legacyNames = [];
     [...(items || []), ...(transactions || [])].forEach(row => {
       const name = (row.supplier_name || '').trim();
-      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), { id: `legacy-${name}`, name, contact: '' });
+      if (name && !names.has(name.toLowerCase())) legacyNames.push(name);
     });
+    if (legacyNames.length) {
+      const uniqueNames = [...new Map(legacyNames.map(name => [name.toLowerCase(), name])).values()];
+      const { data: createdVendors, error: createError } = await supabase.from('vendors').upsert(
+        uniqueNames.map(name => ({ name, contact: '' })),
+        { onConflict: 'name', ignoreDuplicates: true }
+      ).select('*');
+      if (createError) throw createError;
+      (createdVendors || []).forEach(vendor => names.set(vendor.name.trim().toLowerCase(), {
+        id: vendor.id,
+        name: vendor.name,
+        contact: vendor.contact || '',
+        createdAt: vendor.created_at,
+      }));
+    }
     return [...names.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -142,10 +157,22 @@ export async function getAllVendors() {
     db.transactions.toArray(),
   ]);
   const names = new Map(vendors.map(vendor => [vendor.name.trim().toLowerCase(), vendor]));
+  const legacyNames = [];
   [...items, ...transactions].forEach(row => {
     const name = (row.supplierName || '').trim();
-    if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), { id: `legacy-${name}`, name, contact: '' });
+    if (name && !names.has(name.toLowerCase())) legacyNames.push(name);
   });
+  if (legacyNames.length) {
+    const uniqueNames = [...new Map(legacyNames.map(name => [name.toLowerCase(), name])).values()];
+    await db.vendors.bulkAdd(uniqueNames.map(name => ({
+      name,
+      contact: '',
+      createdAt: new Date().toISOString(),
+    })));
+    uniqueNames.forEach(name => names.set(name.toLowerCase(), { name, contact: '', id: undefined }));
+    const refreshedVendors = await db.vendors.toArray();
+    refreshedVendors.forEach(vendor => names.set(vendor.name.trim().toLowerCase(), vendor));
+  }
   return [...names.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
