@@ -9,4 +9,34 @@ create table if not exists public.vendors (
 
 create index if not exists idx_vendors_name on public.vendors(name);
 
+-- The current app uses the publishable/anon browser client without login.
+alter table public.vendors enable row level security;
+grant usage, select on sequence public.vendors_id_seq to anon, authenticated;
+grant select, insert, update, delete on table public.vendors to anon, authenticated;
+
+drop policy if exists "Browser users can read vendors" on public.vendors;
+create policy "Browser users can read vendors"
+on public.vendors for select
+to anon, authenticated
+using (true);
+
+drop policy if exists "Browser users can add vendors" on public.vendors;
+create policy "Browser users can add vendors"
+on public.vendors for insert
+to anon, authenticated
+with check (true);
+
+drop policy if exists "Browser users can update vendors" on public.vendors;
+create policy "Browser users can update vendors"
+on public.vendors for update
+to anon, authenticated
+using (true)
+with check (true);
+
+drop policy if exists "Browser users can delete vendors" on public.vendors;
+create policy "Browser users can delete vendors"
+on public.vendors for delete
+to anon, authenticated
+using (true);
+
 notify pgrst, 'reload schema';

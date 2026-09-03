@@ -724,7 +724,7 @@ function initStockInForm() {
     if (selectedId) {
       const item = allItemsCache.find(i => i.id === Number(selectedId));
       if (item) {
-        supplierInput.value = item.supplierName || '';
+        if (!supplierInput.value) supplierInput.value = item.supplierName || '';
         if (item.unitPrice) {
           unitPriceInput.value = item.unitPrice;
         }
@@ -825,7 +825,7 @@ function initStockOutForm() {
     if (selectedId) {
       const item = allItemsCache.find(i => i.id === Number(selectedId));
       if (item) {
-        supplierInput.value = item.supplierName || '';
+        if (!supplierInput.value) supplierInput.value = item.supplierName || '';
         if (item.unitPrice) {
           unitPriceInput.value = item.unitPrice;
         }
