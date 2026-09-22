@@ -17,7 +17,7 @@
       <div class="brand-header">
         <div class="brand-logo">SS</div>
         <div>
-          <h2 class="brand-title">Stock Management System</h2>
+          <h2 class="brand-title">Farook Textiles</h2>
           <span class="brand-subtitle">Retail Inventory</span>
         </div>
       </div>
@@ -294,47 +294,39 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="stock-in-item">Select Dress Item *</label>
-                  <select id="stock-in-item" class="form-control form-control-simple" required>
-                    <option value="">-- Choose Item --</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
                   <label for="stock-in-supplier">Supplier / Vendor Name *</label>
                   <select id="stock-in-supplier" class="form-control form-control-simple" required>
                     <option value="">-- Choose Vendor --</option>
                   </select>
                 </div>
+              </div>
 
+              <div class="form-row">
                 <div class="form-group">
                   <label for="stock-in-invoice-no">Invoice / Reference No</label>
                   <input type="text" id="stock-in-invoice-no" class="form-control form-control-simple" placeholder="PO-2026-001">
                 </div>
               </div>
 
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="stock-in-qty">Quantity Received (Pieces) *</label>
-                  <input type="number" min="1" id="stock-in-qty" class="form-control form-control-simple" placeholder="10" required>
+              <div class="form-group">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+                  <label style="margin:0;">Items to Receive</label>
+                  <button type="button" class="btn btn-secondary btn-sm" id="stock-in-add-item-btn">Add Item</button>
                 </div>
 
-                <div class="form-group">
-                  <label for="stock-in-unit-price">Unit Price (LKR) *</label>
-                  <input type="number" step="0.01" min="0" id="stock-in-unit-price" class="form-control form-control-simple" placeholder="0.00" required>
-                </div>
-
-                <div class="form-group">
-                  <label for="stock-in-total-amount">Total Amount (LKR)</label>
-                  <input type="number" step="0.01" id="stock-in-total-amount" class="form-control form-control-simple" readonly placeholder="0.00">
-                </div>
+                <div id="stock-in-items-container" style="display:flex; flex-direction:column; gap:12px;"></div>
               </div>
 
-              <div class="form-group">
-                <label for="stock-in-notes">Shipment Notes / Batch Reference</label>
-                <textarea id="stock-in-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-in-grand-total">Grand Total (LKR)</label>
+                  <input type="number" step="0.01" id="stock-in-grand-total" class="form-control form-control-simple" readonly placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-in-notes">Shipment Notes / Batch Reference</label>
+                  <textarea id="stock-in-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
+                </div>
               </div>
 
               <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; flex-wrap: wrap;">

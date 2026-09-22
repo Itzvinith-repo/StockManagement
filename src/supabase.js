@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
+const supabaseUrl = env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase =
+export const remoteSupabase =
   supabaseUrl && supabaseAnonKey
     ? createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
@@ -14,13 +15,15 @@ export const supabase =
       })
     : null;
 
+export const supabase = null;
+
 export function isSupabaseConfigured() {
-  return Boolean(supabase);
+  return false;
 }
 
 export function getSupabaseStatus() {
   return {
-    configured: isSupabaseConfigured(),
+    configured: false,
     url: supabaseUrl || null,
     hasAnonKey: Boolean(supabaseAnonKey),
   };

@@ -1,7 +1,78 @@
 import Dexie from 'dexie';
-import { supabase, isSupabaseConfigured } from './supabase.js';
+import { remoteSupabase, supabase, isSupabaseConfigured } from './supabase.js';
 
 export const db = new Dexie('WholesaleDressStockDB_LKR');
+
+export async function migrateSupabaseDataToLocal() {
+  if (!remoteSupabase) return;
+
+  const localItemCount = await db.items.count().catch(() => 0);
+  if (localItemCount > 0) return;
+
+  try {
+    const [{ data: items = [] }, { data: vendors = [] }, { data: transactions = [] }] = await Promise.all([
+      remoteSupabase.from('items').select('*').order('id', { ascending: true }),
+      remoteSupabase.from('vendors').select('*').order('name', { ascending: true }),
+      remoteSupabase.from('transactions').select('*').order('transaction_time', { ascending: true }),
+    ]);
+
+    if (!items.length && !vendors.length && !transactions.length) return;
+
+    await db.transaction('rw', db.items, db.vendors, db.transactions, async () => {
+      await db.items.clear();
+      await db.vendors.clear();
+      await db.transactions.clear();
+
+      if (items.length) {
+        await db.items.bulkAdd(items.map(item => ({
+          id: item.id,
+          name: item.name,
+          description: item.description ?? '',
+          supplierName: item.supplier_name ?? item.supplierName ?? 'General Supplier',
+          supplierContact: item.supplier_contact ?? item.supplierContact ?? '',
+          quantity: Number(item.quantity ?? 0),
+          unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0),
+          totalValue: Number(item.total_value ?? item.totalValue ?? 0),
+          createdAt: item.created_at ?? item.createdAt ?? new Date().toISOString(),
+          updatedAt: item.updated_at ?? item.updatedAt ?? new Date().toISOString(),
+        })));
+      }
+
+      if (vendors.length) {
+        await db.vendors.bulkAdd(vendors.map(vendor => ({
+          id: vendor.id,
+          name: vendor.name,
+          contact: vendor.contact ?? '',
+          createdAt: vendor.created_at ?? vendor.createdAt ?? new Date().toISOString(),
+        })));
+      }
+
+      if (transactions.length) {
+        await db.transactions.bulkAdd(transactions.map(tx => ({
+          id: tx.id,
+          type: tx.type,
+          timestamp: tx.transaction_time ?? tx.timestamp,
+          itemId: tx.item_id ?? tx.itemId,
+          itemName: tx.item_name ?? tx.itemName ?? '',
+          supplierName: tx.supplier_name ?? tx.supplierName ?? '',
+          customerName: tx.customer_name ?? tx.customerName ?? '',
+          referenceNo: tx.reference_no ?? tx.referenceNo ?? 'N/A',
+          quantity: Number(tx.quantity ?? 0),
+          unitPrice: Number(tx.unit_price ?? tx.unitPrice ?? 0),
+          totalAmount: Number(tx.total_amount ?? tx.totalAmount ?? 0),
+          reasonCode: tx.reason_code ?? tx.reasonCode ?? '',
+          notes: tx.notes ?? '',
+          description: tx.description ?? '',
+          totalWholesaleAmount: Number(tx.total_wholesale_amount ?? tx.totalWholesaleAmount ?? 0),
+          totalCostAmount: Number(tx.total_cost_amount ?? tx.totalCostAmount ?? 0),
+          wholesalePrice: Number(tx.wholesale_price ?? tx.wholesalePrice ?? 0),
+        })));
+      }
+    });
+  } catch (error) {
+    console.warn('Supabase local migration skipped:', error.message || error);
+  }
+}
 
 db.version(1).stores({
   items: '++id, name, supplierName, quantity, unitPrice, totalValue, createdAt',
@@ -536,6 +607,77 @@ export async function getAllTransactions() {
     return getRemoteTransactions();
   }
   return getLocalTransactions();
+}
+
+export async function deleteTransaction(transactionId) {
+  const txId = Number(transactionId);
+  if (!txId) throw new Error('Valid transaction is required.');
+
+  if (isSupabaseConfigured()) {
+    const { data: tx, error: txError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', txId)
+      .single();
+
+    if (txError) {
+      if (txError.code === 'PGRST116') throw new Error('Transaction not found.');
+      throw txError;
+    }
+
+    if (!tx) throw new Error('Transaction not found.');
+
+    const itemId = Number(tx.item_id ?? tx.itemId ?? 0);
+    const qty = Number(tx.quantity ?? 0);
+
+    if (itemId) {
+      const { data: item, error: itemError } = await supabase.from('items').select('*').eq('id', itemId).single();
+      if (itemError && itemError.code !== 'PGRST116') throw itemError;
+
+      if (item) {
+        const currentQty = Number(item.quantity || 0);
+        const nextQty = tx.type === 'IN' ? Math.max(0, currentQty - qty) : currentQty + qty;
+        const unitPrice = Number(item.unit_price || item.unitPrice || 0);
+        const { error: updateError } = await supabase.from('items').update({
+          quantity: nextQty,
+          total_value: nextQty * unitPrice,
+          updated_at: new Date().toISOString(),
+        }).eq('id', itemId);
+
+        if (updateError) throw updateError;
+      }
+    }
+
+    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', txId);
+    if (deleteError) throw deleteError;
+    return tx;
+  }
+
+  return await db.transaction('rw', db.items, db.transactions, async () => {
+    const tx = await db.transactions.get(txId);
+    if (!tx) throw new Error('Transaction not found.');
+
+    if (tx.itemId) {
+      const item = await db.items.get(tx.itemId);
+      if (item) {
+        const currentQty = Number(item.quantity || 0);
+        const qty = Number(tx.quantity || 0);
+        const nextQty = tx.type === 'IN' ? Math.max(0, currentQty - qty) : currentQty + qty;
+        const unitPrice = Number(item.unitPrice || 0);
+
+        await db.items.update(tx.itemId, {
+          quantity: nextQty,
+          totalValue: nextQty * unitPrice,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    await db.transactions.delete(txId);
+    const remaining = await db.transactions.get(txId);
+    if (remaining) throw new Error('Transaction could not be removed.');
+    return tx;
+  });
 }
 
 export async function updateTransactionSupplierAndDate(id, { supplierName, date }) {

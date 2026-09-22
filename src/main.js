@@ -14,17 +14,63 @@ import {
   deleteDressItem, 
   processStockIn, 
   processStockOut, 
-  getAllTransactions, 
+  getAllTransactions,
+  deleteTransaction,
   updateTransactionSupplierAndDate,
   clearAllTransactions,
   recordStockCorrection,
   getSupplierDailyStockInSummary,
   exportDatabaseJSON, 
-  importDatabaseJSON 
+  importDatabaseJSON,
+  migrateSupabaseDataToLocal
 } from './db.js';
 
-const APP_NAME = 'DressStock Shop';
+const APP_NAME = 'Farook Textiles Inventory Manager';
 const APP_VERSION = '1.0.0';
+const RECEIPT_SHOP_NAME = 'Farook Textiles';
+const RECEIPT_WIDTH_MM = 80;
+
+const stockInPrintSubmitController = {
+  processing: false,
+  async run({ printFn, submitFn }) {
+    if (this.processing) {
+      return { ok: false, duplicate: true, message: 'Stock-In processing is already in progress.' };
+    }
+
+    this.processing = true;
+
+    try {
+      await printFn();
+      await submitFn();
+      return { ok: true, duplicate: false, message: 'Stock-In submitted successfully.' };
+    } catch (error) {
+      return { ok: false, duplicate: false, message: error?.message || 'Printing or submission failed.' };
+    } finally {
+      this.processing = false;
+    }
+  },
+};
+
+const stockOutPrintSubmitController = {
+  processing: false,
+  async run({ printFn, submitFn }) {
+    if (this.processing) {
+      return { ok: false, duplicate: true, message: 'Stock-Out processing is already in progress.' };
+    }
+
+    this.processing = true;
+
+    try {
+      await printFn();
+      await submitFn();
+      return { ok: true, duplicate: false, message: 'Stock-Out submitted successfully.' };
+    } catch (error) {
+      return { ok: false, duplicate: false, message: error?.message || 'Printing or submission failed.' };
+    } finally {
+      this.processing = false;
+    }
+  },
+};
 
 // Charts instances
 let stockDistChart = null;
@@ -72,11 +118,167 @@ function getLocalDatetimeString(date = new Date()) {
   return localISOTime;
 }
 
+function renderStockInItemOptions(selectEl) {
+  if (!selectEl) return;
+  const items = allItemsCache.length
+    ? allItemsCache.map(item => `<option value="${item.id}">${escapeHtml(item.name)} (${Number(item.quantity || 0)} pcs)</option>`).join('')
+    : '<option value="">-- No items available --</option>';
+
+  selectEl.innerHTML = `<option value="">-- Choose Item --</option>${items}`;
+}
+
+function updateStockInEntryRowTotal(rowEl) {
+  const qtyInput = rowEl.querySelector('.stock-in-entry-qty');
+  const unitPriceInput = rowEl.querySelector('.stock-in-entry-unit-price');
+  const totalInput = rowEl.querySelector('.stock-in-entry-total');
+  if (!qtyInput || !unitPriceInput || !totalInput) return;
+
+  const qty = Number(qtyInput.value) || 0;
+  const unitPrice = Number(unitPriceInput.value) || 0;
+  totalInput.value = (qty * unitPrice).toFixed(2);
+}
+
+function updateStockInGrandTotal() {
+  const totalInput = document.getElementById('stock-in-grand-total');
+  if (!totalInput) return;
+
+  const rows = document.querySelectorAll('.stock-in-entry-row');
+  const total = [...rows].reduce((sum, row) => {
+    const totalValue = Number(row.querySelector('.stock-in-entry-total')?.value || 0);
+    return sum + totalValue;
+  }, 0);
+
+  totalInput.value = total.toFixed(2);
+}
+
+function addStockInEntryRow() {
+  const container = document.getElementById('stock-in-items-container');
+  if (!container) return;
+
+  const row = document.createElement('div');
+  row.className = 'stock-in-entry-row';
+  row.style.display = 'grid';
+  row.style.gridTemplateColumns = 'minmax(180px, 2fr) minmax(80px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) auto';
+  row.style.gap = '10px';
+  row.style.alignItems = 'end';
+  row.innerHTML = `
+    <div class="form-group" style="margin: 0;">
+      <label style="display:block; margin-bottom:6px;">Item</label>
+      <select class="form-control form-control-simple stock-in-entry-item" required>
+        <option value="">-- Choose Item --</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin: 0;">
+      <label style="display:block; margin-bottom:6px;">Qty</label>
+      <input type="number" min="1" class="form-control form-control-simple stock-in-entry-qty" value="1" required>
+    </div>
+    <div class="form-group" style="margin: 0;">
+      <label style="display:block; margin-bottom:6px;">Unit Price</label>
+      <input type="number" step="0.01" min="0" class="form-control form-control-simple stock-in-entry-unit-price" value="0" required>
+    </div>
+    <div class="form-group" style="margin: 0;">
+      <label style="display:block; margin-bottom:6px;">Line Total</label>
+      <input type="number" step="0.01" class="form-control form-control-simple stock-in-entry-total" readonly value="0.00">
+    </div>
+    <button type="button" class="btn btn-secondary stock-in-entry-remove" style="align-self:end;">Remove</button>
+  `;
+
+  const itemSelect = row.querySelector('.stock-in-entry-item');
+  const qtyInput = row.querySelector('.stock-in-entry-qty');
+  const unitInput = row.querySelector('.stock-in-entry-unit-price');
+
+  renderStockInItemOptions(itemSelect);
+
+  itemSelect.addEventListener('change', () => {
+    const selectedId = itemSelect.value;
+    const item = allItemsCache.find(entry => Number(entry.id) === Number(selectedId));
+    if (item) {
+      const price = Number(item.unitPrice || 0);
+      unitInput.value = price.toFixed(2);
+      if (!qtyInput.value || Number(qtyInput.value) < 1) qtyInput.value = 1;
+    }
+    updateStockInEntryRowTotal(row);
+    updateStockInGrandTotal();
+  });
+
+  qtyInput.addEventListener('input', () => {
+    updateStockInEntryRowTotal(row);
+    updateStockInGrandTotal();
+  });
+
+  unitInput.addEventListener('input', () => {
+    updateStockInEntryRowTotal(row);
+    updateStockInGrandTotal();
+  });
+
+  row.querySelector('.stock-in-entry-remove').addEventListener('click', () => {
+    row.remove();
+    updateStockInGrandTotal();
+  });
+
+  container.appendChild(row);
+  updateStockInGrandTotal();
+}
+
+function getStockInEntryRows() {
+  return [...document.querySelectorAll('.stock-in-entry-row')];
+}
+
+function createStockInInvoicePreview({ supplierName, invoiceNo, notes, timestamp, rows }) {
+  const items = rows.map(row => {
+    const itemSelect = row.querySelector('.stock-in-entry-item');
+    const qtyInput = row.querySelector('.stock-in-entry-qty');
+    const unitInput = row.querySelector('.stock-in-entry-unit-price');
+    const item = allItemsCache.find(entry => Number(entry.id) === Number(itemSelect.value));
+    const quantity = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitInput.value) || Number(item?.unitPrice || 0);
+    const totalAmount = quantity * unitPrice;
+
+    return {
+      itemId: Number(itemSelect.value),
+      itemName: item?.name || 'Dress Item',
+      supplierName,
+      quantity,
+      unitPrice,
+      totalAmount,
+      referenceNo: invoiceNo || 'N/A',
+      reasonCode: 'Stock Receiving',
+      notes: notes || '',
+      description: item?.description || '',
+      timestamp,
+    };
+  }).filter(entry => entry.itemId && entry.quantity > 0 && entry.unitPrice >= 0);
+
+  if (!items.length) return null;
+
+  const totalAmount = items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  return {
+    id: Date.now(),
+    type: 'IN',
+    supplierName,
+    customerName: '',
+    quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+    totalAmount,
+    referenceNo: invoiceNo || 'N/A',
+    reasonCode: 'Stock Receiving',
+    notes: notes || 'Stock receipt',
+    description: 'Multiple items received into stock',
+    timestamp,
+    itemName: items[0]?.itemName || 'Dress Item',
+    items,
+  };
+}
+
 // Global App Initialization
 document.addEventListener('DOMContentLoaded', async () => {
   try {
+    if ('storage' in navigator && 'persist' in navigator.storage) {
+      navigator.storage.persist().catch(() => {});
+    }
+
     // Client-ready app: do not auto-seed demo inventory data.
     // Users can import a backup or start adding live stock data from scratch.
+    await migrateSupabaseDataToLocal();
 
     // 1. Attach navigation event listeners
     initNavigation();
@@ -248,6 +450,12 @@ function populateItemDropdowns() {
   }
 
   const suppliers = new Set(allVendorsCache.map(vendor => vendor.name));
+
+  document.querySelectorAll('.stock-in-entry-item').forEach(select => {
+    const currentValue = select.value;
+    renderStockInItemOptions(select);
+    if (currentValue) select.value = currentValue;
+  });
 
   allItemsCache.forEach(item => {
     const stockQty = Number(item.quantity || 0);
@@ -525,10 +733,29 @@ function prefillStockInForm(itemId) {
   const item = allItemsCache.find(currentItem => currentItem.id === Number(itemId));
   if (!item) return;
 
-  document.getElementById('stock-in-item').value = String(item.id);
-  document.getElementById('stock-in-supplier').value = item.supplierName || '';
-  document.getElementById('stock-in-unit-price').value = item.unitPrice || '';
-  document.getElementById('stock-in-qty').focus();
+  const container = document.getElementById('stock-in-items-container');
+  const rows = getStockInEntryRows();
+  const targetRow = rows[0] || null;
+
+  if (!targetRow) {
+    addStockInEntryRow();
+  }
+
+  const activeRow = getStockInEntryRows()[0];
+  if (!activeRow) return;
+
+  const itemSelect = activeRow.querySelector('.stock-in-entry-item');
+  const qtyInput = activeRow.querySelector('.stock-in-entry-qty');
+  const priceInput = activeRow.querySelector('.stock-in-entry-unit-price');
+
+  if (itemSelect) itemSelect.value = String(item.id);
+  if (priceInput) priceInput.value = Number(item.unitPrice || 0).toFixed(2);
+  if (qtyInput) qtyInput.value = '1';
+  const supplierInput = document.getElementById('stock-in-supplier');
+  if (supplierInput && !supplierInput.value) supplierInput.value = item.supplierName || '';
+  updateStockInEntryRowTotal(activeRow);
+  updateStockInGrandTotal();
+  qtyInput?.focus();
 }
 
 // Catalog Search / Filter Listeners
@@ -556,7 +783,20 @@ function initModalHandlers() {
   cancelBtn.addEventListener('click', closeDressModal);
   invoiceCloseBtn.addEventListener('click', closeInvoiceModal);
   invoiceCloseFooterBtn.addEventListener('click', closeInvoiceModal);
-  printInvoiceBtn.addEventListener('click', () => window.print());
+  printInvoiceBtn.addEventListener('click', () => {
+    const invoice = currentInvoicePreview || currentSupplierSummaryInvoice;
+    if (!invoice) {
+      alert('There is no invoice to print yet.');
+      return;
+    }
+
+    if (currentSupplierSummaryInvoice) {
+      printSupplierSummaryInvoice(currentSupplierSummaryInvoice);
+      return;
+    }
+
+    openPrintDocument(renderInvoiceHtml(invoice), `Invoice-${invoice.referenceNo || 'transaction'}`);
+  });
   invoiceModal.addEventListener('click', (e) => {
     if (e.target === invoiceModal) closeInvoiceModal();
   });
@@ -701,56 +941,74 @@ function closeDressModal() {
 function initStockInForm() {
   const form = document.getElementById('stock-in-form');
   const datetimeInput = document.getElementById('stock-in-datetime');
-  const itemSelect = document.getElementById('stock-in-item');
   const supplierInput = document.getElementById('stock-in-supplier');
-  const qtyInput = document.getElementById('stock-in-qty');
-  const unitPriceInput = document.getElementById('stock-in-unit-price');
-  const totalAmountInput = document.getElementById('stock-in-total-amount');
   const invoiceNoInput = document.getElementById('stock-in-invoice-no');
+  const notesInput = document.getElementById('stock-in-notes');
+  const grandTotalInput = document.getElementById('stock-in-grand-total');
+  const addItemBtn = document.getElementById('stock-in-add-item-btn');
   const generateInvoiceBtn = document.getElementById('stock-in-generate-invoice-btn');
 
-  const updateStockInTotal = () => {
-    const qty = Number(qtyInput.value) || 0;
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    totalAmountInput.value = (qty * unitPrice).toFixed(2);
-  };
-
-  qtyInput.addEventListener('input', updateStockInTotal);
-  unitPriceInput.addEventListener('input', updateStockInTotal);
   datetimeInput.value = getLocalDatetimeString();
+  addStockInEntryRow();
 
-  itemSelect.addEventListener('change', () => {
-    const selectedId = itemSelect.value;
-    if (selectedId) {
-      const item = allItemsCache.find(i => i.id === Number(selectedId));
-      if (item) {
-        if (!supplierInput.value) supplierInput.value = item.supplierName || '';
-        if (item.unitPrice) {
-          unitPriceInput.value = item.unitPrice;
-        }
-      }
-    }
-    updateStockInTotal();
+  addItemBtn.addEventListener('click', addStockInEntryRow);
+
+  form.addEventListener('reset', () => {
+    setTimeout(() => {
+      const container = document.getElementById('stock-in-items-container');
+      if (!container) return;
+      container.innerHTML = '';
+      addStockInEntryRow();
+      datetimeInput.value = getLocalDatetimeString();
+      if (grandTotalInput) grandTotalInput.value = '0.00';
+    }, 0);
   });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const itemId = itemSelect.value;
-    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+    const rows = getStockInEntryRows();
     const supplierName = supplierInput.value.trim();
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    const quantity = Number(qtyInput.value) || 0;
-    const notes = document.getElementById('stock-in-notes').value.trim();
+    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
     const invoiceNo = invoiceNoInput.value.trim();
+    const notes = notesInput.value.trim();
 
-    if (!itemId || !supplierName || !quantity || !unitPrice) {
-      alert('Please complete all required stock-in fields before submitting.');
+    const validRows = rows.filter(row => {
+      const itemSelect = row.querySelector('.stock-in-entry-item');
+      const qtyInput = row.querySelector('.stock-in-entry-qty');
+      const unitInput = row.querySelector('.stock-in-entry-unit-price');
+      return itemSelect && itemSelect.value && Number(qtyInput.value || 0) > 0 && Number(unitInput.value || 0) >= 0;
+    });
+
+    if (!supplierName || !validRows.length) {
+      alert('Please select a vendor and add at least one valid item for the stock-in batch.');
       return;
     }
 
     try {
-      await processStockIn({ itemId, timestamp, supplierName, unitPrice, quantity, referenceNo: invoiceNo, notes, reasonCode: 'Stock Receiving' });
-      alert(`Stock-In Logged Successfully! Added +${quantity} pcs.`);
+      for (const row of validRows) {
+        const itemId = row.querySelector('.stock-in-entry-item').value;
+        const quantity = Number(row.querySelector('.stock-in-entry-qty').value || 0);
+        const unitPrice = Number(row.querySelector('.stock-in-entry-unit-price').value || 0);
+
+        await processStockIn({
+          itemId,
+          timestamp,
+          supplierName,
+          unitPrice,
+          quantity,
+          referenceNo: invoiceNo,
+          notes,
+          reasonCode: 'Stock Receiving',
+        });
+      }
+
+      const totalAmount = validRows.reduce((sum, row) => {
+        const qty = Number(row.querySelector('.stock-in-entry-qty').value || 0);
+        const unitPrice = Number(row.querySelector('.stock-in-entry-unit-price').value || 0);
+        return sum + qty * unitPrice;
+      }, 0);
+
+      alert(`Stock-In Logged Successfully! ${validRows.length} item line(s) recorded. Total: ${formatCurrency(totalAmount)}`);
       form.reset();
       datetimeInput.value = getLocalDatetimeString();
       await refreshAllData();
@@ -759,41 +1017,114 @@ function initStockInForm() {
     }
   });
 
-  generateInvoiceBtn.addEventListener('click', () => {
-    const itemId = itemSelect.value;
-    const selectedItem = allItemsCache.find(i => i.id === Number(itemId));
-    if (!itemId || !selectedItem) {
-      alert('Please choose a dress item before generating an invoice.');
+  generateInvoiceBtn.addEventListener('click', async () => {
+    const supplierName = supplierInput.value.trim() || 'Supplier';
+    const invoiceNo = invoiceNoInput.value.trim() || 'N/A';
+    const notes = notesInput.value.trim();
+    const rows = getStockInEntryRows();
+    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+    const preview = createStockInInvoicePreview({
+      supplierName,
+      invoiceNo,
+      notes,
+      timestamp,
+      rows,
+    });
+
+    if (!preview) {
+      alert('Please add at least one valid item row before generating an invoice.');
       return;
     }
 
-    const quantity = Number(qtyInput.value) || 0;
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    const totalAmount = quantity * unitPrice;
-    const supplier = supplierInput.value.trim() || 'Supplier';
-    const referenceNo = invoiceNoInput.value.trim() || 'N/A';
-    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+    const validRows = rows.filter(row => {
+      const itemSelect = row.querySelector('.stock-in-entry-item');
+      const qtyInput = row.querySelector('.stock-in-entry-qty');
+      const unitInput = row.querySelector('.stock-in-entry-unit-price');
+      return itemSelect && itemSelect.value && Number(qtyInput.value || 0) > 0 && Number(unitInput.value || 0) >= 0;
+    });
 
-    currentInvoicePreview = {
-      id: Date.now(),
-      type: 'IN',
-      itemName: selectedItem.name,
-      itemId: Number(itemId),
-      supplierName: supplier,
-      customerName: '',
-      quantity,
-      unitPrice,
-      totalAmount,
-      referenceNo,
-      reasonCode: 'Stock Receiving',
-      notes: document.getElementById('stock-in-notes').value.trim(),
-      description: 'Item received into stock / inventory',
-      timestamp
-    };
-    currentSupplierSummaryInvoice = null;
+    if (!supplierName || !validRows.length) {
+      alert('Please select a vendor and add at least one valid item for the stock-in batch.');
+      return;
+    }
 
-    document.getElementById('nav-invoices').click();
-    renderInvoiceDetail(currentInvoicePreview);
+    if (stockInPrintSubmitController.processing) {
+      alert('Invoice generation is already in progress. Please wait.');
+      return;
+    }
+
+    generateInvoiceBtn.disabled = true;
+    generateInvoiceBtn.textContent = 'Printing...';
+
+    try {
+      currentInvoicePreview = preview;
+      currentSupplierSummaryInvoice = null;
+
+      const invoiceHtml = renderInvoiceHtml({
+        type: 'IN',
+        title: 'Stock-In Invoice',
+        itemName: preview.items[0]?.itemName || 'Dress Item',
+        supplierName,
+        customerName: '',
+        referenceNo: invoiceNo,
+        quantity: preview.quantity,
+        unitPrice: preview.items[0]?.unitPrice || 0,
+        totalAmount: preview.totalAmount,
+        timestamp: preview.timestamp,
+        notes: preview.notes,
+        description: preview.description,
+        items: preview.items,
+      });
+
+      const result = await stockInPrintSubmitController.run({
+        printFn: async () => {
+          await openPrintDocument(invoiceHtml, `Stock-In-${invoiceNo || 'Receipt'}`);
+        },
+        submitFn: async () => {
+          for (const row of validRows) {
+            const itemId = row.querySelector('.stock-in-entry-item').value;
+            const quantity = Number(row.querySelector('.stock-in-entry-qty').value || 0);
+            const unitPrice = Number(row.querySelector('.stock-in-entry-unit-price').value || 0);
+
+            await processStockIn({
+              itemId,
+              timestamp,
+              supplierName,
+              unitPrice,
+              quantity,
+              referenceNo: invoiceNo,
+              notes,
+              reasonCode: 'Stock Receiving',
+            });
+          }
+        },
+      });
+
+      if (!result.ok) {
+        if (result.duplicate) {
+          alert(result.message);
+          return;
+        }
+        alert(`Printing failed. Stock-In was not submitted. ${result.message}`);
+        return;
+      }
+
+      const totalAmount = validRows.reduce((sum, row) => {
+        const qty = Number(row.querySelector('.stock-in-entry-qty').value || 0);
+        const unitPrice = Number(row.querySelector('.stock-in-entry-unit-price').value || 0);
+        return sum + qty * unitPrice;
+      }, 0);
+
+      alert(`Stock-In Logged Successfully! ${validRows.length} item line(s) recorded. Total: ${formatCurrency(totalAmount)}`);
+      form.reset();
+      datetimeInput.value = getLocalDatetimeString();
+      await refreshAllData();
+    } catch (error) {
+      alert(`Printing failed. Stock-In was not submitted. ${error.message || ''}`);
+    } finally {
+      generateInvoiceBtn.disabled = false;
+      generateInvoiceBtn.textContent = 'Generate Invoice';
+    }
   });
 }
 
@@ -862,7 +1193,7 @@ function initStockOutForm() {
     }
   });
 
-  generateInvoiceBtn.addEventListener('click', () => {
+  generateInvoiceBtn.addEventListener('click', async () => {
     const itemId = itemSelect.value;
     const selectedItem = allItemsCache.find(i => i.id === Number(itemId));
     if (!itemId || !selectedItem) {
@@ -873,10 +1204,17 @@ function initStockOutForm() {
     const quantity = Number(qtyInput.value) || 0;
     const unitPrice = Number(unitPriceInput.value) || 0;
     const totalAmount = quantity * unitPrice;
+    if (!supplierInput.value.trim() || !quantity || !unitPrice) {
+      alert('Please complete all required stock-out fields before generating an invoice.');
+      return;
+    }
+
     const partyName = customerInput.value.trim() || 'Customer';
     const supplierName = supplierInput.value.trim() || 'Supplier';
     const referenceNo = refInput.value.trim() || 'N/A';
     const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+    const reasonCode = document.getElementById('stock-out-reason').value;
+    const notes = document.getElementById('stock-out-notes').value.trim();
 
     currentInvoicePreview = {
       id: Date.now(),
@@ -889,15 +1227,59 @@ function initStockOutForm() {
       unitPrice,
       totalAmount,
       referenceNo,
-      reasonCode: document.getElementById('stock-out-reason').value,
-      notes: document.getElementById('stock-out-notes').value.trim(),
+      reasonCode,
+      notes,
       description: 'Item sold or removed from inventory',
       timestamp
     };
     currentSupplierSummaryInvoice = null;
 
-    document.getElementById('nav-invoices').click();
-    renderInvoiceDetail(currentInvoicePreview);
+    if (stockOutPrintSubmitController.processing) {
+      alert('Invoice generation is already in progress. Please wait.');
+      return;
+    }
+
+    generateInvoiceBtn.disabled = true;
+    generateInvoiceBtn.textContent = 'Printing...';
+
+    try {
+      const invoiceHtml = renderInvoiceHtml(currentInvoicePreview);
+      const result = await stockOutPrintSubmitController.run({
+        printFn: async () => {
+          await openPrintDocument(invoiceHtml, `Stock-Out-${referenceNo || 'Receipt'}`);
+        },
+        submitFn: async () => {
+          await processStockOut({
+            itemId,
+            timestamp,
+            supplierName,
+            customerName: partyName,
+            referenceNo,
+            quantity,
+            unitPrice,
+            reasonCode,
+            notes,
+          });
+        },
+      });
+
+      if (!result.ok) {
+        alert(result.duplicate
+          ? result.message
+          : `Printing failed. Stock-Out was not submitted. ${result.message}`);
+        return;
+      }
+
+      alert(`Stock-Out Logged Successfully! Deducted ${quantity} pcs.`);
+      form.reset();
+      datetimeInput.value = getLocalDatetimeString();
+      await refreshAllData();
+    } catch (error) {
+      alert(`Printing failed. Stock-Out was not submitted. ${error.message || ''}`);
+    } finally {
+      generateInvoiceBtn.disabled = false;
+      generateInvoiceBtn.textContent = 'Generate Invoice';
+    }
   });
 }
 
@@ -963,6 +1345,26 @@ function initReportsHandlers() {
         return;
       }
 
+      const deleteBtn = e.target.closest('.delete-transaction-btn');
+      if (deleteBtn) {
+        const txId = Number(deleteBtn.dataset.txId);
+        const tx = allTransactionsCache.find(entry => Number(entry.id) === txId);
+        if (!tx) return;
+
+        const movementLabel = tx.type === 'IN' ? 'stock-in' : 'stock-out';
+        const confirmMessage = `Delete this ${movementLabel} movement? This will reverse the item quantity in stock and remove it from the movement log.`;
+        if (!confirm(confirmMessage)) return;
+
+        try {
+          await deleteTransaction(txId);
+          await refreshAllData();
+          alert(`✅ ${movementLabel.charAt(0).toUpperCase() + movementLabel.slice(1)} movement deleted successfully.`);
+        } catch (err) {
+          alert(`Failed to delete movement: ${err.message}`);
+        }
+        return;
+      }
+
       const btn = e.target.closest('.reverse-stock-btn');
       if (!btn) return;
 
@@ -1019,13 +1421,19 @@ function renderReports() {
 }
 
 // Report 1: Real-Time Current Stock Level
-function openInvoiceModal({ type, title, itemName, partyName, referenceNo, quantity, unitPrice, totalAmount, date, notes, description }) {
+function openInvoiceModal({ type, title, itemName, partyName, referenceNo, quantity, unitPrice, totalAmount, date, notes, description, items = [] }) {
   const modal = document.getElementById('invoice-modal');
   const content = document.getElementById('invoice-content');
   const invoiceDate = date ? new Date(date) : new Date();
   const formattedDate = invoiceDate.toLocaleString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
+
+  const rows = items.length
+    ? items
+    : [{ itemName: itemName || 'Dress Item', quantity: quantity || 0, unitPrice: unitPrice || 0, totalAmount: totalAmount || 0, description: description || 'Stock entry' }];
+
+  const totalValue = Number(totalAmount || rows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0));
 
   content.innerHTML = `
     <div style="border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; background: rgba(15, 23, 42, 0.02);">
@@ -1041,34 +1449,34 @@ function openInvoiceModal({ type, title, itemName, partyName, referenceNo, quant
       </div>
 
       <div style="display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
-        <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Item</div><div style="font-weight: 700; margin-top: 4px;">${itemName}</div></div>
         <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Reference</div><div style="font-weight: 700; margin-top: 4px;">${referenceNo}</div></div>
         <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">${type === 'IN' ? 'Supplier' : 'Customer'}</div><div style="font-weight: 700; margin-top: 4px;">${partyName}</div></div>
-        <div><div style="font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);">Status</div><div style="font-weight: 700; margin-top: 4px;">${type === 'IN' ? 'In Stock' : 'Out of Stock'}</div></div>
       </div>
 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
         <thead>
           <tr style="background: rgba(99, 102, 241, 0.08);">
-            <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Description</th>
+            <th style="padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border-color);">Item</th>
             <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Qty</th>
             <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Unit Price</th>
             <th style="padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border-color);">Amount</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td style="padding: 12px; border-bottom: 1px solid var(--border-color);">${description}</td>
-            <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color);">${quantity}</td>
-            <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(unitPrice)}</td>
-            <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color); font-weight: 700;">${formatCurrency(totalAmount)}</td>
-          </tr>
+          ${rows.map(row => `
+            <tr>
+              <td style="padding: 12px; border-bottom: 1px solid var(--border-color);">${row.itemName || 'Dress Item'}</td>
+              <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color);">${Number(row.quantity || 0)}</td>
+              <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(Number(row.unitPrice || 0))}</td>
+              <td style="padding: 12px; text-align: right; border-bottom: 1px solid var(--border-color); font-weight: 700;">${formatCurrency(Number(row.totalAmount || 0))}</td>
+            </tr>
+          `).join('')}
         </tbody>
       </table>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px;">
         <div style="color: var(--text-muted); font-size: 0.82rem;">${notes || 'No notes added.'}</div>
-        <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(totalAmount)}</div>
+        <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(totalValue)}</div>
       </div>
     </div>
   `;
@@ -1188,14 +1596,16 @@ function renderInvoiceDetail(tx) {
   const typeLabel = tx.type === 'IN' ? 'Stock-In Invoice' : 'Stock-Out Invoice';
   const invoiceDate = tx.timestamp ? new Date(tx.timestamp) : new Date();
   const partyName = tx.type === 'IN' ? (tx.supplierName || 'Supplier') : (tx.customerName || 'Customer');
-  const itemRows = `
+  const rows = (tx.items && tx.items.length ? tx.items : [{ itemName: tx.itemName || 'Dress Item', quantity: tx.quantity || 0, unitPrice: tx.unitPrice || 0, totalAmount: tx.totalAmount || 0, referenceNo: tx.referenceNo || 'N/A' }]);
+
+  const itemRows = rows.map(row => `
     <tr>
-      <td style="padding: 10px; border-bottom: 1px solid var(--border-color);">${tx.itemName || 'Dress Item'}</td>
-      <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${tx.quantity} pcs</td>
-      <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(Number(tx.unitPrice || 0))}</td>
-      <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color); font-weight: 700;">${formatCurrency(Number(tx.totalAmount || 0))}</td>
+      <td style="padding: 10px; border-bottom: 1px solid var(--border-color);">${row.itemName || 'Dress Item'}</td>
+      <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${Number(row.quantity || 0)} pcs</td>
+      <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color);">${formatCurrency(Number(row.unitPrice || 0))}</td>
+      <td style="padding: 10px; text-align: right; border-bottom: 1px solid var(--border-color); font-weight: 700;">${formatCurrency(Number(row.totalAmount || 0))}</td>
     </tr>
-  `;
+  `).join('');
 
   const html = `
     <div style="border: 1px solid var(--border-color); border-radius: 14px; padding: 18px; background: rgba(15, 23, 42, 0.02);">
@@ -1235,7 +1645,7 @@ function renderInvoiceDetail(tx) {
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
         <div style="color: var(--text-muted); font-size: 0.8rem;">${tx.notes || 'No notes added.'}</div>
-        <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(Number(tx.totalAmount || 0))}</div>
+        <div style="font-size: 1.2rem; font-weight: 800;">Total: ${formatCurrency(Number(tx.totalAmount || rows.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0)))}</div>
       </div>
     </div>
   `;
@@ -1304,18 +1714,47 @@ function printInvoice(invoice) {
 }
 
 function renderInvoiceHtml(invoice) {
+  const rows = (invoice.items && invoice.items.length ? invoice.items : [{ itemName: invoice.itemName || 'Dress Item', quantity: invoice.quantity || 0, unitPrice: invoice.unitPrice || 0, totalAmount: invoice.totalAmount || 0 }]);
+  const body = rows.map(row => `
+    <tr>
+      <td>${row.itemName || 'Dress Item'}</td>
+      <td>${row.quantity || 0}</td>
+      <td>${formatCurrency(Number(row.unitPrice || 0))}</td>
+      <td>${formatCurrency(Number(row.totalAmount || 0))}</td>
+    </tr>
+  `).join('');
+
+  const totalValue = Number(invoice.totalAmount || rows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0));
+
   return `
-    <div style="font-family: Arial, sans-serif; color: #111; padding: 20px;">
-      <h2 style="margin: 0 0 8px;">DressStock Shop</h2>
-      <div style="font-size: 12px; margin-bottom: 14px;">${invoice.type === 'IN' ? 'Stock-In Invoice' : 'Stock-Out Invoice'} • ${new Date(invoice.timestamp).toLocaleString()}</div>
-      <div style="margin-bottom: 12px;"><strong>Item:</strong> ${invoice.itemName}</div>
-      <div style="margin-bottom: 12px;"><strong>${invoice.type === 'IN' ? 'Supplier' : 'Customer'}:</strong> ${invoice.type === 'IN' ? (invoice.supplierName || 'Supplier') : (invoice.customerName || 'Customer')}</div>
-      <div style="margin-bottom: 12px;"><strong>Reference:</strong> ${invoice.referenceNo || 'N/A'}</div>
-      <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
-        <tr><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Qty</th><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Unit Price</th><th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Total</th></tr>
-        <tr><td style="border: 1px solid #ccc; padding: 8px;">${invoice.quantity}</td><td style="border: 1px solid #ccc; padding: 8px;">${formatCurrency(Number(invoice.unitPrice || 0))}</td><td style="border: 1px solid #ccc; padding: 8px;">${formatCurrency(Number(invoice.totalAmount || 0))}</td></tr>
+    <div class="thermal-receipt">
+      <div class="thermal-header">
+        <div class="thermal-brand">${RECEIPT_SHOP_NAME}</div>
+        <div class="thermal-subtitle">${invoice.type === 'IN' ? 'Stock-In Receipt' : 'Stock-Out Receipt'}</div>
+      </div>
+
+      <div class="thermal-meta">
+        <div><span>Date</span><strong>${new Date(invoice.timestamp).toLocaleString()}</strong></div>
+        <div><span>${invoice.type === 'IN' ? 'Supplier' : 'Customer'}</span><strong>${invoice.type === 'IN' ? (invoice.supplierName || 'Supplier') : (invoice.customerName || 'Customer')}</strong></div>
+        <div><span>Reference</span><strong>${invoice.referenceNo || 'N/A'}</strong></div>
+      </div>
+
+      <table class="thermal-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Amt</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
       </table>
-      <div style="margin-top: 12px; font-weight: 700; text-align: right;">Total: ${formatCurrency(Number(invoice.totalAmount || 0))}</div>
+
+      <div class="thermal-total-row">
+        <span>Total</span>
+        <strong>${formatCurrency(totalValue)}</strong>
+      </div>
     </div>
   `;
 }
@@ -1366,19 +1805,40 @@ function printSupplierHistoryDocument(supplierName, summary) {
 }
 
 function openPrintDocument(content, title) {
-  const printWindow = window.open('', '_blank', 'width=900,height=700');
-  if (!printWindow) {
-    alert('Please allow pop-ups to download the invoice as PDF.');
-    return;
-  }
-  printWindow.document.write(`<!doctype html><html><head><title>${title}</title><meta charset="utf-8"><style>${printDocumentStyles()}</style></head><body>${content}</body></html>`);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.addEventListener('load', () => printWindow.print());
+  return new Promise((resolve, reject) => {
+    const printWindow = window.open('', '_blank', 'width=0,height=0,menubar=no,toolbar=no,location=no,status=no');
+    if (!printWindow) {
+      reject(new Error('Please allow pop-ups to print the invoice.'));
+      return;
+    }
+
+    printWindow.document.write(`<!doctype html><html><head><title>${title}</title><meta charset="utf-8"><style>${printDocumentStyles()}</style></head><body>${content}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      try {
+        printWindow.print();
+      } catch (error) {
+        console.warn('Printer print call failed:', error);
+        reject(error);
+        return;
+      }
+
+      setTimeout(() => {
+        try {
+          printWindow.close();
+        } catch (error) {
+          console.warn('Print window close failed:', error);
+        }
+        resolve(true);
+      }, 1200);
+    }, 250);
+  });
 }
 
 function printDocumentStyles() {
-  return `@page { size: A4; margin: 16mm; } * { box-sizing: border-box; } body { margin: 0; color: #172033; font: 13px Arial, sans-serif; } .print-invoice { width: 100%; } .print-invoice-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1e3a5f; padding-bottom: 22px; margin-bottom: 28px; } h1 { margin: 4px 0; font-size: 28px; letter-spacing: .02em; } p { margin: 0; color: #64748b; } .print-kicker { color: #1e3a5f; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; } .print-meta { display: grid; gap: 5px; text-align: right; font-size: 14px; } .print-meta span { color: #64748b; } table { width: 100%; border-collapse: collapse; } th { background: #e8eef5; color: #233a56; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; } th, td { border-bottom: 1px solid #d9e0e8; padding: 11px 9px; text-align: left; } td:nth-child(3), td:nth-child(4), td:nth-child(5), th:nth-child(3), th:nth-child(4), th:nth-child(5) { text-align: right; } .print-invoice-total { display: flex; justify-content: space-between; border-top: 2px solid #1e3a5f; margin-top: 22px; padding-top: 16px; font-size: 15px; } .print-invoice-total strong { font-size: 20px; }`;
+  return `@page { size: ${RECEIPT_WIDTH_MM}mm auto; margin: 0; } * { box-sizing: border-box; } html, body { margin: 0; padding: 0; background: #fff; } body { width: ${RECEIPT_WIDTH_MM}mm; max-width: ${RECEIPT_WIDTH_MM}mm; font-family: Arial, sans-serif; color: #111; overflow: hidden; } .thermal-receipt { width: ${RECEIPT_WIDTH_MM}mm; max-width: ${RECEIPT_WIDTH_MM}mm; padding: 4mm; } .thermal-header { text-align: center; border-bottom: 1px dashed #333; padding-bottom: 3mm; margin-bottom: 3mm; } .thermal-brand { font-size: 18px; font-weight: 700; letter-spacing: 0.04em; } .thermal-subtitle { font-size: 12px; margin-top: 1mm; text-transform: uppercase; } .thermal-meta { display: grid; gap: 2mm; font-size: 11px; margin-bottom: 3mm; } .thermal-meta div { display: flex; flex-direction: column; gap: 1mm; } .thermal-meta span { color: #444; text-transform: uppercase; font-size: 10px; } .thermal-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; } .thermal-table th, .thermal-table td { border-bottom: 1px dashed #ddd; padding: 1.8mm 0.6mm; vertical-align: top; text-align: left; word-wrap: break-word; } .thermal-table th:nth-child(2), .thermal-table td:nth-child(2), .thermal-table th:nth-child(3), .thermal-table td:nth-child(3), .thermal-table th:nth-child(4), .thermal-table td:nth-child(4) { text-align: right; } .thermal-total-row { display: flex; justify-content: space-between; align-items: center; margin-top: 3mm; padding-top: 3mm; border-top: 1px solid #111; font-size: 12px; font-weight: 700; } .print-invoice { width: 100%; } .print-invoice-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1e3a5f; padding-bottom: 22px; margin-bottom: 28px; } h1 { margin: 4px 0; font-size: 28px; letter-spacing: .02em; } p { margin: 0; color: #64748b; } .print-kicker { color: #1e3a5f; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; } .print-meta { display: grid; gap: 5px; text-align: right; font-size: 14px; } .print-meta span { color: #64748b; } table { width: 100%; border-collapse: collapse; } th { background: #e8eef5; color: #233a56; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; } th, td { border-bottom: 1px solid #d9e0e8; padding: 11px 9px; text-align: left; } td:nth-child(3), td:nth-child(4), td:nth-child(5), th:nth-child(3), th:nth-child(4), th:nth-child(5) { text-align: right; } .print-invoice-total { display: flex; justify-content: space-between; border-top: 2px solid #1e3a5f; margin-top: 22px; padding-top: 16px; font-size: 15px; } .print-invoice-total strong { font-size: 20px; }`;
 }
 
 function renderReportStock() {
@@ -1479,6 +1939,7 @@ function renderReportMovement() {
       <td style="font-size: 0.85rem; color: var(--text-muted);">${party}${ref}</td>
       <td>
         <button class="btn btn-secondary btn-sm view-transaction-btn" data-tx-id="${tx.id}" style="margin-right: 6px;">View Details</button>
+        <button class="btn btn-danger btn-sm delete-transaction-btn" data-tx-id="${tx.id}" style="margin-right: 6px;">Delete</button>
         ${canReverse ? `<button class="btn btn-secondary btn-sm reverse-stock-btn" data-tx-id="${tx.id}" data-item-id="${tx.itemId || ''}" data-qty="${tx.quantity}" data-item-name="${(tx.itemName || '').replace(/"/g, '&quot;')}" data-supplier-name="${(tx.supplierName || '').replace(/"/g, '&quot;')}" data-reference-no="${(tx.referenceNo || '').replace(/"/g, '&quot;')}">Restock</button>` : '<span style="color: var(--text-dim); font-size: 0.8rem;">Locked</span>'}
       </td>
     `;
