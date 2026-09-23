@@ -14,6 +14,7 @@ import {
   deleteDressItem, 
   processStockIn, 
   processStockOut, 
+  processStockOutMulti, 
   getAllTransactions,
   deleteTransaction,
   updateTransactionSupplierAndDate,
@@ -24,6 +25,7 @@ import {
   importDatabaseJSON,
   migrateSupabaseDataToLocal
 } from './db.js';
+import { computeProfitSummary } from './profitAnalyzer.js';
 
 const APP_NAME = 'Farook Textiles Inventory Manager';
 const APP_VERSION = '1.0.0';
@@ -75,6 +77,7 @@ const stockOutPrintSubmitController = {
 // Charts instances
 let stockDistChart = null;
 let movementChart = null;
+let profitChart = null;
 
 // Application State
 let currentTab = 'dashboard-tab';
@@ -224,6 +227,136 @@ function getStockInEntryRows() {
   return [...document.querySelectorAll('.stock-in-entry-row')];
 }
 
+function renderStockOutItemOptions(selectEl) {
+  if (!selectEl) return;
+  const items = allItemsCache.length
+    ? allItemsCache.map(item => {
+        const stockQty = Number(item.quantity || 0);
+        return `<option value="${item.id}" data-stock="${stockQty}" data-price="${Number(item.unitPrice || 0)}">${escapeHtml(item.name)} (${stockQty} pcs available)</option>`;
+      }).join('')
+    : '<option value="">-- No items available --</option>';
+
+  selectEl.innerHTML = `<option value="">-- Choose Item --</option>${items}`;
+}
+
+function updateStockOutEntryRowTotal(rowEl) {
+  const qtyInput = rowEl.querySelector('.stock-out-entry-qty');
+  const unitPriceInput = rowEl.querySelector('.stock-out-entry-unit-price');
+  const totalInput = rowEl.querySelector('.stock-out-entry-total');
+  const stockSpan = rowEl.querySelector('.stock-out-entry-available');
+  if (!qtyInput || !unitPriceInput || !totalInput) return;
+
+  const qty = Number(qtyInput.value) || 0;
+  const unitPrice = Number(unitPriceInput.value) || 0;
+  totalInput.value = (qty * unitPrice).toFixed(2);
+  
+  if (stockSpan) {
+    const available = Number(stockSpan.dataset.stock || 0);
+    stockSpan.textContent = `Available: ${available} pcs`;
+    stockSpan.style.color = qty > available ? 'var(--accent-danger)' : 'var(--text-muted)';
+  }
+}
+
+function updateStockOutGrandTotal() {
+  const totalInput = document.getElementById('stock-out-grand-total');
+  if (!totalInput) return;
+
+  const rows = document.querySelectorAll('.stock-out-entry-row');
+  const total = [...rows].reduce((sum, row) => {
+    const totalValue = Number(row.querySelector('.stock-out-entry-total')?.value || 0);
+    return sum + totalValue;
+  }, 0);
+
+  totalInput.value = total.toFixed(2);
+}
+
+function addStockOutEntryRow() {
+  const container = document.getElementById('stock-out-items-container');
+  if (!container) return;
+
+  const row = document.createElement('div');
+  row.className = 'stock-out-entry-row';
+  row.style.display = 'flex';
+  row.style.flexWrap = 'wrap';
+  row.style.gap = '12px';
+  row.style.alignItems = 'flex-end';
+  row.style.padding = '12px';
+  row.style.border = '1px solid rgba(128, 128, 128, 0.25)';
+  row.style.borderRadius = '8px';
+  row.style.background = 'rgba(128, 128, 128, 0.05)';
+  row.innerHTML = `
+    <div class="form-group" style="margin: 0; flex: 2 1 220px; min-width: 180px;">
+      <label style="display:block; margin-bottom:6px;">Item</label>
+      <select class="form-control form-control-simple stock-out-entry-item" required>
+        <option value="">-- Choose Item --</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin: 0; flex: 0 1 80px; min-width: 72px;">
+      <label style="display:block; margin-bottom:6px;">Qty</label>
+      <input type="number" min="1" class="form-control form-control-simple stock-out-entry-qty" value="1" required>
+    </div>
+    <div class="form-group" style="margin: 0; flex: 1 1 130px; min-width: 110px;">
+      <label style="display:block; margin-bottom:6px;">Unit Price (LKR)</label>
+      <input type="number" step="0.01" min="0" class="form-control form-control-simple stock-out-entry-unit-price" value="0" required>
+    </div>
+    <div class="form-group" style="margin: 0; flex: 1 1 120px; min-width: 100px;">
+      <label style="display:block; margin-bottom:6px;">Line Total (LKR)</label>
+      <input type="number" step="0.01" class="form-control form-control-simple stock-out-entry-total" readonly value="0.00">
+    </div>
+    <div class="form-group" style="margin: 0; flex: 1 1 110px; min-width: 90px;">
+      <label style="display:block; margin-bottom:6px;">&nbsp;</label>
+      <span class="stock-out-entry-available" style="font-size: 0.75rem; color: var(--text-muted); line-height: 38px;" data-stock="0">Available: 0 pcs</span>
+    </div>
+    <button type="button" class="btn btn-secondary stock-out-entry-remove" style="flex: 0 0 auto; margin-left: auto; margin-bottom: 1px;">
+      Remove
+    </button>
+  `;
+
+  const itemSelect = row.querySelector('.stock-out-entry-item');
+  const qtyInput = row.querySelector('.stock-out-entry-qty');
+  const unitInput = row.querySelector('.stock-out-entry-unit-price');
+  const stockSpan = row.querySelector('.stock-out-entry-available');
+
+  renderStockOutItemOptions(itemSelect);
+
+  itemSelect.addEventListener('change', () => {
+    const selectedId = itemSelect.value;
+    const item = allItemsCache.find(entry => Number(entry.id) === Number(selectedId));
+    if (item) {
+      const price = Number(item.unitPrice || 0);
+      unitInput.value = price.toFixed(2);
+      if (!qtyInput.value || Number(qtyInput.value) < 1) qtyInput.value = 1;
+      stockSpan.dataset.stock = Number(item.quantity || 0);
+    } else {
+      stockSpan.dataset.stock = 0;
+    }
+    updateStockOutEntryRowTotal(row);
+    updateStockOutGrandTotal();
+  });
+
+  qtyInput.addEventListener('input', () => {
+    updateStockOutEntryRowTotal(row);
+    updateStockOutGrandTotal();
+  });
+
+  unitInput.addEventListener('input', () => {
+    updateStockOutEntryRowTotal(row);
+    updateStockOutGrandTotal();
+  });
+
+  row.querySelector('.stock-out-entry-remove').addEventListener('click', () => {
+    row.remove();
+    updateStockOutGrandTotal();
+  });
+
+  container.appendChild(row);
+  updateStockOutGrandTotal();
+}
+
+function getStockOutEntryRows() {
+  return [...document.querySelectorAll('.stock-out-entry-row')];
+}
+
 function createStockInInvoicePreview({ supplierName, invoiceNo, notes, timestamp, rows }) {
   const items = rows.map(row => {
     const itemSelect = row.querySelector('.stock-in-entry-item');
@@ -269,6 +402,52 @@ function createStockInInvoicePreview({ supplierName, invoiceNo, notes, timestamp
   };
 }
 
+function createStockOutInvoicePreview({ supplierName, customerName, invoiceNo, notes, reasonCode, timestamp, rows }) {
+  const items = rows.map(row => {
+    const itemSelect = row.querySelector('.stock-out-entry-item');
+    const qtyInput = row.querySelector('.stock-out-entry-qty');
+    const unitInput = row.querySelector('.stock-out-entry-unit-price');
+    const item = allItemsCache.find(entry => Number(entry.id) === Number(itemSelect.value));
+    const quantity = Number(qtyInput.value) || 0;
+    const unitPrice = Number(unitInput.value) || Number(item?.unitPrice || 0);
+    const totalAmount = quantity * unitPrice;
+
+    return {
+      itemId: Number(itemSelect.value),
+      itemName: item?.name || 'Dress Item',
+      supplierName,
+      customerName,
+      quantity,
+      unitPrice,
+      totalAmount,
+      referenceNo: invoiceNo || 'N/A',
+      reasonCode: reasonCode || 'Wholesale Customer Sale',
+      notes: notes || '',
+      description: item?.description || '',
+      timestamp,
+    };
+  }).filter(entry => entry.itemId && entry.quantity > 0 && entry.unitPrice >= 0);
+
+  if (!items.length) return null;
+
+  const totalAmount = items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  return {
+    id: Date.now(),
+    type: 'OUT',
+    supplierName,
+    customerName,
+    quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
+    totalAmount,
+    referenceNo: invoiceNo || 'N/A',
+    reasonCode: reasonCode || 'Wholesale Customer Sale',
+    notes: notes || 'Stock dispatch',
+    description: 'Multiple items dispatched from stock',
+    timestamp,
+    itemName: items[0]?.itemName || 'Dress Item',
+    items,
+  };
+}
+
 // Global App Initialization
 document.addEventListener('DOMContentLoaded', async () => {
   try {
@@ -291,6 +470,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initVendorHandlers();
     initStockInForm();
     initStockOutForm();
+    initProfitAnalyzerHandlers();
     initReportsHandlers();
     initDataBackupHandlers();
 
@@ -365,8 +545,8 @@ function initNavigation() {
       // Update Header Title & Description
       updateHeaderTitle(tabId);
 
-      // Refresh view data
-      await refreshAllData();
+      // Refresh only the active tab's view (caches are already up to date)
+      renderActiveView();
 
       if (tabId === 'stock-in-tab' && pendingStockInItemId !== null) {
         prefillStockInForm(pendingStockInItemId);
@@ -416,37 +596,72 @@ function updateHeaderTitle(tabId) {
 
 // Master Refresh Data Engine
 export async function refreshAllData() {
-  [allItemsCache, allTransactionsCache, allVendorsCache] = await Promise.all([
+  const [items, transactions] = await Promise.all([
     getAllItems(),
     getAllTransactions(),
-    getAllVendors(),
   ]);
+  const vendors = await getAllVendors({ items, transactions });
+  allItemsCache = items;
+  allTransactionsCache = transactions;
+  allVendorsCache = vendors;
 
+  renderAll();
+  refreshIcons();
+}
+
+function renderAll() {
   populateItemDropdowns();
   renderDashboard();
   renderCatalogTable();
   renderVendorCatalog();
   renderReports();
+}
+
+// Render only the tab currently visible. Caches are already loaded, so no
+// re-fetching or re-rendering of hidden views.
+function renderActiveView() {
+  switch (currentTab) {
+    case 'dashboard-tab':
+      renderDashboard();
+      break;
+    case 'catalog-tab':
+      populateItemDropdowns();
+      renderCatalogTable();
+      break;
+    case 'vendor-tab':
+      populateItemDropdowns();
+      renderVendorCatalog();
+      break;
+    case 'stock-in-tab':
+    case 'stock-out-tab':
+      populateItemDropdowns();
+      break;
+    case 'invoices-tab':
+      renderInvoiceList();
+      if (currentInvoicePreview) renderInvoiceDetail(currentInvoicePreview);
+      break;
+    case 'reports-tab':
+      renderReports();
+      break;
+    case 'settings-tab':
+    default:
+      break;
+  }
   refreshIcons();
 }
 
 // Populate Item select boxes for Stock-In & Stock-Out
 function populateItemDropdowns() {
   const stockInSelect = document.getElementById('stock-in-item');
-  const stockOutSelect = document.getElementById('stock-out-item');
   const supplierFilter = document.getElementById('catalog-supplier-filter');
   const dressSupplierSelect = document.getElementById('dress-supplier-name');
   const stockInSupplierSelect = document.getElementById('stock-in-supplier');
   const stockOutSupplierSelect = document.getElementById('stock-out-supplier');
 
   const prevInVal = stockInSelect ? stockInSelect.value : '';
-  const prevOutVal = stockOutSelect ? stockOutSelect.value : '';
 
   if (stockInSelect) {
     stockInSelect.innerHTML = '<option value="">-- Choose Item --</option>';
-  }
-  if (stockOutSelect) {
-    stockOutSelect.innerHTML = '<option value="">-- Choose Item --</option>';
   }
 
   const suppliers = new Set(allVendorsCache.map(vendor => vendor.name));
@@ -457,6 +672,20 @@ function populateItemDropdowns() {
     if (currentValue) select.value = currentValue;
   });
 
+  document.querySelectorAll('.stock-out-entry-item').forEach(select => {
+    const currentValue = select.value;
+    renderStockOutItemOptions(select);
+    if (currentValue) {
+      select.value = currentValue;
+      const item = allItemsCache.find(entry => Number(entry.id) === Number(currentValue));
+      const stockSpan = select.closest('.stock-out-entry-row')?.querySelector('.stock-out-entry-available');
+      if (stockSpan) {
+        stockSpan.dataset.stock = Number(item?.quantity || 0);
+        stockSpan.textContent = `Available: ${Number(item?.quantity || 0)} pcs`;
+      }
+    }
+  });
+
   allItemsCache.forEach(item => {
     const stockQty = Number(item.quantity || 0);
     const optIn = document.createElement('option');
@@ -464,16 +693,10 @@ function populateItemDropdowns() {
     optIn.textContent = `${item.name} (${stockQty} pcs in stock)`;
     stockInSelect && stockInSelect.appendChild(optIn);
 
-    const optOut = document.createElement('option');
-    optOut.value = item.id;
-    optOut.textContent = `${item.name} (${stockQty} pcs in stock)`;
-    stockOutSelect && stockOutSelect.appendChild(optOut);
-
     if (item.supplierName) suppliers.add(item.supplierName);
   });
 
   if (prevInVal && stockInSelect) stockInSelect.value = prevInVal;
-  if (prevOutVal && stockOutSelect) stockOutSelect.value = prevOutVal;
 
   // Supplier filter options
   if (supplierFilter) {
@@ -630,6 +853,182 @@ function renderCharts() {
       }
     });
   }
+}
+
+function renderProfitChart(summary) {
+  const canvas = document.getElementById('chart-profit-trend');
+  if (!canvas) return;
+  if (profitChart) profitChart.destroy();
+
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const textColor = isDark ? '#94a3b8' : '#475569';
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
+
+  const sorted = [...summary].sort((a, b) => a.date.localeCompare(b.date));
+  const labels = sorted.map(row => row.date);
+  const profitData = sorted.map(row => row.profit);
+  const stockInData = sorted.map(row => row.stockInCost);
+
+  if (!labels.length) {
+    return;
+  }
+
+  profitChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Profit (Stock-Out Amount)',
+          data: profitData,
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.15)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 3
+        },
+        {
+          label: 'Stock-In Cost',
+          data: stockInData,
+          borderColor: '#6366f1',
+          backgroundColor: 'transparent',
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { color: textColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } },
+        y: {
+          ticks: { color: textColor, callback: value => 'Rs. ' + Number(value).toLocaleString() },
+          grid: { color: gridColor }
+        }
+      },
+      plugins: {
+        legend: { labels: { color: textColor, font: { family: 'Plus Jakarta Sans', size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: context => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
+          }
+        }
+      }
+    }
+  });
+}
+
+function getProfitPeriodDates() {
+  const fromEl = document.getElementById('profit-date-from');
+  const toEl = document.getElementById('profit-date-to');
+  const today = new Date();
+  const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
+  const fromDate = fromEl && fromEl.value ? fromEl.value : new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+  const toDate = toEl && toEl.value ? toEl.value : localDate;
+
+  if (fromEl && !fromEl.value) fromEl.value = fromDate;
+  if (toEl && !toEl.value) toEl.value = toDate;
+
+  return { fromDate, toDate };
+}
+
+function renderProfitAnalyzer() {
+  const { fromDate, toDate } = getProfitPeriodDates();
+
+  const { rows: summary, today, totalStockValue, todayStr } = computeProfitSummary({
+    transactions: allTransactionsCache,
+    items: allItemsCache,
+    fromDate,
+    toDate,
+  });
+
+  document.getElementById('profit-today-stockin-cost').textContent = formatCurrency(today.stockInCost);
+  document.getElementById('profit-today-stockout-sales').textContent = formatCurrency(today.stockOutSales);
+  document.getElementById('profit-today-profit').textContent = formatCurrency(today.profit);
+
+  const profitEl = document.getElementById('profit-today-profit');
+  profitEl.style.color = today.profit < 0 ? 'var(--accent-danger)' : 'var(--accent-success)';
+
+  document.getElementById('profit-total-stock-value').textContent = formatCurrency(totalStockValue);
+  document.getElementById('profit-stockin-count').textContent = today.stockInCount;
+  document.getElementById('profit-stockout-count').textContent = today.stockOutCount;
+
+  // History table
+  const tbody = document.getElementById('profit-history-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (!summary.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim);">No transactions in the selected date range.</td></tr>';
+  } else {
+    summary.forEach(day => {
+      const tr = document.createElement('tr');
+      const isToday = day.date === todayStr;
+      tr.innerHTML = `
+        <td style="font-weight: 600;">${isToday ? day.date + ' (Today)' : day.date}</td>
+        <td>${formatCurrency(day.stockInCost)}</td>
+        <td>${formatCurrency(day.stockOutSales)}</td>
+        <td style="font-weight: 700; ${day.profit < 0 ? 'color: var(--accent-danger);' : 'color: var(--accent-success);'}">${formatCurrency(day.profit)}</td>
+        <td>${day.stockInCount}</td>
+        <td>${day.stockOutCount}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    const rangeTotals = summary.reduce((acc, day) => {
+      acc.stockInCost += day.stockInCost;
+      acc.stockOutSales += day.stockOutSales;
+      acc.stockOutCost += day.stockOutCost;
+      acc.profit += day.profit;
+      acc.stockInCount += day.stockInCount;
+      acc.stockOutCount += day.stockOutCount;
+      return acc;
+    }, { stockInCost: 0, stockOutSales: 0, stockOutCost: 0, profit: 0, stockInCount: 0, stockOutCount: 0 });
+
+    const totalTr = document.createElement('tr');
+    totalTr.style.background = 'rgba(99, 102, 241, 0.06)';
+    totalTr.innerHTML = `
+      <td style="font-weight: 800;">Range Total (${fromDate} to ${toDate})</td>
+      <td style="font-weight: 700;">${formatCurrency(rangeTotals.stockInCost)}</td>
+      <td style="font-weight: 700;">${formatCurrency(rangeTotals.stockOutSales)}</td>
+      <td style="font-weight: 800; ${rangeTotals.profit < 0 ? 'color: var(--accent-danger);' : 'color: var(--accent-success);'}">${formatCurrency(rangeTotals.profit)}</td>
+      <td>${rangeTotals.stockInCount}</td>
+      <td>${rangeTotals.stockOutCount}</td>
+    `;
+    tbody.appendChild(totalTr);
+  }
+
+  renderProfitChart(summary);
+}
+
+function initProfitAnalyzerHandlers() {
+  const refreshBtn = document.getElementById('profit-refresh-btn');
+  const todayBtn = document.getElementById('profit-today-btn');
+  const fromEl = document.getElementById('profit-date-from');
+  const toEl = document.getElementById('profit-date-to');
+
+  const today = new Date();
+  const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+
+  if (fromEl && !fromEl.value) fromEl.value = thirtyDaysAgo;
+  if (toEl && !toEl.value) toEl.value = localToday;
+
+  if (refreshBtn) refreshBtn.addEventListener('click', renderProfitAnalyzer);
+  if (todayBtn) {
+    todayBtn.addEventListener('click', () => {
+      if (fromEl) fromEl.value = localToday;
+      if (toEl) toEl.value = localToday;
+      renderProfitAnalyzer();
+    });
+  }
+  if (fromEl) fromEl.addEventListener('change', renderProfitAnalyzer);
+  if (toEl) toEl.addEventListener('change', renderProfitAnalyzer);
 }
 
 // Render Dress Catalog Table with Search & Supplier Filter
@@ -1131,60 +1530,294 @@ function initStockInForm() {
 // Stock-Out Form Handler
 function initStockOutForm() {
   const form = document.getElementById('stock-out-form');
+  if (!form) return;
+
   const datetimeInput = document.getElementById('stock-out-datetime');
-  const itemSelect = document.getElementById('stock-out-item');
-  const qtyInput = document.getElementById('stock-out-qty');
-  const unitPriceInput = document.getElementById('stock-out-unit-price');
-  const totalAmountInput = document.getElementById('stock-out-total-amount');
-  const supplierInput = document.getElementById('stock-out-supplier');
   const customerInput = document.getElementById('stock-out-customer');
+  const supplierInput = document.getElementById('stock-out-supplier');
   const refInput = document.getElementById('stock-out-ref');
+  const notesInput = document.getElementById('stock-out-notes');
+  const grandTotalInput = document.getElementById('stock-out-grand-total');
   const generateInvoiceBtn = document.getElementById('stock-out-generate-invoice-btn');
+  const addItemBtn = document.getElementById('stock-out-add-item-btn');
+  const multiRowContainer = document.getElementById('stock-out-items-container');
 
-  const updateStockOutTotal = () => {
-    const qty = Number(qtyInput.value) || 0;
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    totalAmountInput.value = (qty * unitPrice).toFixed(2);
-  };
+  if (!multiRowContainer) {
+    const itemSelect = document.getElementById('stock-out-item');
+    const qtyInput = document.getElementById('stock-out-qty');
+    const unitInput = document.getElementById('stock-out-unit-price');
+    const totalInput = document.getElementById('stock-out-total-amount');
+    const reasonInput = document.getElementById('stock-out-reason');
 
-  qtyInput.addEventListener('input', updateStockOutTotal);
-  unitPriceInput.addEventListener('input', updateStockOutTotal);
-  datetimeInput.value = getLocalDatetimeString();
+    if (datetimeInput) datetimeInput.value = getLocalDatetimeString();
+    if (itemSelect) renderStockOutItemOptions(itemSelect);
 
-  itemSelect.addEventListener('change', () => {
-    const selectedId = itemSelect.value;
-    if (selectedId) {
-      const item = allItemsCache.find(i => i.id === Number(selectedId));
-      if (item) {
-        if (!supplierInput.value) supplierInput.value = item.supplierName || '';
-        if (item.unitPrice) {
-          unitPriceInput.value = item.unitPrice;
+    const recalcLegacyValue = () => {
+      const qty = Number(qtyInput?.value || 0);
+      const unitPrice = Number(unitInput?.value || 0);
+      if (totalInput) totalInput.value = (qty * unitPrice).toFixed(2);
+    };
+
+    itemSelect?.addEventListener('change', () => {
+      const selectedId = itemSelect.value;
+      const item = allItemsCache.find(entry => Number(entry.id) === Number(selectedId));
+      if (item && unitInput) {
+        unitInput.value = Number(item.unitPrice || 0).toFixed(2);
+      }
+      recalcLegacyValue();
+    });
+
+    qtyInput?.addEventListener('input', recalcLegacyValue);
+    unitInput?.addEventListener('input', recalcLegacyValue);
+
+    form.addEventListener('reset', () => {
+      setTimeout(() => {
+        if (datetimeInput) datetimeInput.value = getLocalDatetimeString();
+        if (itemSelect) itemSelect.value = '';
+        if (qtyInput) qtyInput.value = '';
+        if (unitInput) unitInput.value = '';
+        if (totalInput) totalInput.value = '0.00';
+      }, 0);
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const selectedId = itemSelect?.value;
+      const quantity = Number(qtyInput?.value || 0);
+      const unitPrice = Number(unitInput?.value || 0);
+      const supplierName = supplierInput?.value?.trim() || '';
+      const customerName = customerInput?.value?.trim() || 'Customer';
+      const referenceNo = refInput?.value?.trim() || 'N/A';
+      const notes = notesInput?.value?.trim() || '';
+      const reasonCode = reasonInput?.value || 'Wholesale Customer Sale';
+      const timestamp = datetimeInput?.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+
+      if (!selectedId) {
+        alert('Please select a dress item for the stock-out transaction.');
+        return;
+      }
+
+      const item = allItemsCache.find(entry => Number(entry.id) === Number(selectedId));
+      if (!item) {
+        alert('The selected dress item could not be found.');
+        return;
+      }
+
+      if (!supplierName) {
+        alert('Please select a vendor/supplier for the stock-out transaction.');
+        return;
+      }
+
+      if (!quantity || quantity < 1) {
+        alert('Please enter a quantity greater than zero.');
+        return;
+      }
+
+      if (quantity > Number(item.quantity || 0)) {
+        alert(`Insufficient stock for "${item.name}". Available: ${Number(item.quantity || 0)}, Requested: ${quantity}.`);
+        return;
+      }
+
+      try {
+        await processStockOut({
+          itemId: selectedId,
+          quantity,
+          unitPrice,
+          supplierName,
+          customerName,
+          referenceNo,
+          reasonCode,
+          notes,
+          timestamp,
+        });
+
+        alert(`Stock-Out Logged Successfully! ${quantity} pcs deducted from ${item.name}. Total: ${formatCurrency(quantity * unitPrice)}`);
+        form.reset();
+        if (datetimeInput) datetimeInput.value = getLocalDatetimeString();
+        await refreshAllData();
+      } catch (err) {
+        alert(`Stock-Out Error: ${err.message}`);
+      }
+    });
+
+    if (generateInvoiceBtn) {
+      generateInvoiceBtn.addEventListener('click', async () => {
+        const selectedId = itemSelect?.value;
+        const quantity = Number(qtyInput?.value || 0);
+        const unitPrice = Number(unitInput?.value || 0);
+        const supplierName = supplierInput?.value?.trim() || 'Supplier';
+        const customerName = customerInput?.value?.trim() || 'Customer';
+        const referenceNo = refInput?.value?.trim() || 'N/A';
+        const notes = notesInput?.value?.trim() || '';
+        const reasonCode = reasonInput?.value || 'Wholesale Customer Sale';
+
+        if (!selectedId || !quantity || quantity < 1) {
+          alert('Please select a valid item and quantity before generating an invoice.');
+          return;
         }
+
+        const item = allItemsCache.find(entry => Number(entry.id) === Number(selectedId));
+        if (!item) {
+          alert('The selected dress item could not be found.');
+          return;
+        }
+
+        const preview = {
+          id: Date.now(),
+          type: 'OUT',
+          supplierName,
+          customerName,
+          quantity,
+          totalAmount: quantity * unitPrice,
+          referenceNo,
+          reasonCode,
+          notes,
+          description: item.description || '',
+          timestamp: datetimeInput?.value || new Date().toISOString(),
+          itemName: item.name,
+          items: [{
+            itemId: Number(selectedId),
+            itemName: item.name,
+            supplierName,
+            customerName,
+            quantity,
+            unitPrice,
+            totalAmount: quantity * unitPrice,
+            referenceNo,
+            reasonCode,
+            notes,
+            description: item.description || '',
+            timestamp: datetimeInput?.value || new Date().toISOString(),
+          }],
+        };
+
+        const invoiceHtml = renderInvoiceHtml({
+          type: 'OUT',
+          title: 'Stock-Out Invoice',
+          itemName: preview.itemName,
+          supplierName: preview.supplierName,
+          customerName: preview.customerName,
+          referenceNo: preview.referenceNo,
+          quantity: preview.quantity,
+          unitPrice: preview.items[0]?.unitPrice || 0,
+          totalAmount: preview.totalAmount,
+          timestamp: preview.timestamp,
+          notes: preview.notes,
+          description: preview.description,
+          items: preview.items,
+        });
+
+        await openPrintDocument(invoiceHtml, `Stock-Out-${referenceNo}`);
+      });
+    }
+
+    return;
+  }
+
+  datetimeInput.value = getLocalDatetimeString();
+  addStockOutEntryRow();
+
+  if (addItemBtn) addItemBtn.addEventListener('click', addStockOutEntryRow);
+
+  form.addEventListener('reset', () => {
+    setTimeout(() => {
+      const container = document.getElementById('stock-out-items-container');
+      if (!container) return;
+      container.innerHTML = '';
+      addStockOutEntryRow();
+      if (datetimeInput) datetimeInput.value = getLocalDatetimeString();
+      if (grandTotalInput) grandTotalInput.value = '0.00';
+    }, 0);
+  });
+
+  const validateStockOutRows = () => {
+    const rows = getStockOutEntryRows();
+    const supplierName = supplierInput.value.trim();
+    const customerName = customerInput.value.trim();
+    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
+    const referenceNo = refInput.value.trim();
+    const reasonCode = document.getElementById('stock-out-reason').value;
+    const notes = notesInput.value.trim();
+
+    const validRows = rows.filter(row => {
+      const itemSelect = row.querySelector('.stock-out-entry-item');
+      const qtyInput = row.querySelector('.stock-out-entry-qty');
+      const unitInput = row.querySelector('.stock-out-entry-unit-price');
+      return itemSelect && itemSelect.value && Number(qtyInput.value || 0) > 0 && Number(unitInput.value || 0) >= 0;
+    });
+
+    if (!supplierName || !customerName) {
+      return { ok: false, message: 'Please select a vendor and enter the customer name for the stock-out batch.', validRows, reasonCode, notes, timestamp, referenceNo };
+    }
+
+    if (!validRows.length) {
+      return { ok: false, message: 'Please add at least one valid item row for the stock-out batch.', validRows, reasonCode, notes, timestamp, referenceNo };
+    }
+
+    const seenItems = new Set();
+    for (const row of validRows) {
+      const itemSelect = row.querySelector('.stock-out-entry-item');
+      const qtyInput = row.querySelector('.stock-out-entry-qty');
+      const selectedId = itemSelect.value;
+      const qty = Number(qtyInput.value) || 0;
+      const item = allItemsCache.find(entry => Number(entry.id) === Number(selectedId));
+      const available = Number(item?.quantity || 0);
+
+      if (seenItems.has(selectedId)) {
+        return { ok: false, message: `Duplicate item "${item?.name || 'Dress Item'}" in the same transaction. Please use one row per item.`, validRows, reasonCode, notes, timestamp, referenceNo };
+      }
+      seenItems.add(selectedId);
+
+      if (qty > available) {
+        return { ok: false, message: `Insufficient stock for "${item?.name || 'Dress Item'}". Available: ${available}, Requested: ${qty}.`, validRows, reasonCode, notes, timestamp, referenceNo };
       }
     }
-    updateStockOutTotal();
-  });
+
+    return { ok: true, message: '', validRows, reasonCode, notes, timestamp, referenceNo };
+  };
+
+  const buildStockOutItems = (validRows, reasonCode, notes, timestamp, referenceNo) => {
+    const common = {
+      timestamp,
+      supplierName: supplierInput.value.trim(),
+      customerName: customerInput.value.trim() || 'Customer',
+      referenceNo: referenceNo || 'N/A',
+      reasonCode,
+      notes,
+    };
+    return validRows.map(row => {
+      const itemId = row.querySelector('.stock-out-entry-item').value;
+      const quantity = Number(row.querySelector('.stock-out-entry-qty').value || 0);
+      const unitPrice = Number(row.querySelector('.stock-out-entry-unit-price').value || 0);
+      return { itemId, quantity, unitPrice, ...common };
+    });
+  };
+
+  const calculateGrandTotal = (validRows) => {
+    return validRows.reduce((sum, row) => {
+      const qty = Number(row.querySelector('.stock-out-entry-qty').value || 0);
+      const unitPrice = Number(row.querySelector('.stock-out-entry-unit-price').value || 0);
+      return sum + qty * unitPrice;
+    }, 0);
+  };
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const itemId = itemSelect.value;
-    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
-    const supplierName = supplierInput.value.trim();
-    const customerName = customerInput.value.trim();
-    const referenceNo = refInput.value.trim();
-    const quantity = Number(qtyInput.value) || 0;
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    const reasonCode = document.getElementById('stock-out-reason').value;
-    const notes = document.getElementById('stock-out-notes').value.trim();
-
-    if (!itemId || !supplierName || !quantity || !unitPrice) {
-      alert('Please complete all required stock-out fields before submitting.');
+    const validation = validateStockOutRows();
+    if (!validation.ok) {
+      alert(validation.message);
       return;
     }
 
+    const { validRows, reasonCode, notes, timestamp, referenceNo } = validation;
+    const stockOutItems = buildStockOutItems(validRows, reasonCode, notes, timestamp, referenceNo);
+
     try {
-      await processStockOut({ itemId, timestamp, supplierName, customerName, referenceNo, quantity, unitPrice, reasonCode, notes });
-      alert(`Stock-Out Logged Successfully! Deducted ${quantity} pcs.`);
+      await processStockOutMulti(stockOutItems);
+      const totalAmount = calculateGrandTotal(validRows);
+      const totalQty = validRows.reduce((sum, row) => sum + Number(row.querySelector('.stock-out-entry-qty').value || 0), 0);
+      alert(`Stock-Out Logged Successfully! ${validRows.length} item line(s) recorded, ${totalQty} pcs deducted. Total: ${formatCurrency(totalAmount)}`);
       form.reset();
       datetimeInput.value = getLocalDatetimeString();
       await refreshAllData();
@@ -1193,94 +1826,90 @@ function initStockOutForm() {
     }
   });
 
-  generateInvoiceBtn.addEventListener('click', async () => {
-    const itemId = itemSelect.value;
-    const selectedItem = allItemsCache.find(i => i.id === Number(itemId));
-    if (!itemId || !selectedItem) {
-      alert('Please choose a dress item before generating an invoice.');
-      return;
-    }
-
-    const quantity = Number(qtyInput.value) || 0;
-    const unitPrice = Number(unitPriceInput.value) || 0;
-    const totalAmount = quantity * unitPrice;
-    if (!supplierInput.value.trim() || !quantity || !unitPrice) {
-      alert('Please complete all required stock-out fields before generating an invoice.');
-      return;
-    }
-
-    const partyName = customerInput.value.trim() || 'Customer';
-    const supplierName = supplierInput.value.trim() || 'Supplier';
-    const referenceNo = refInput.value.trim() || 'N/A';
-    const timestamp = datetimeInput.value ? new Date(datetimeInput.value).toISOString() : new Date().toISOString();
-    const reasonCode = document.getElementById('stock-out-reason').value;
-    const notes = document.getElementById('stock-out-notes').value.trim();
-
-    currentInvoicePreview = {
-      id: Date.now(),
-      type: 'OUT',
-      itemName: selectedItem.name,
-      itemId: Number(itemId),
-      supplierName,
-      customerName: partyName,
-      quantity,
-      unitPrice,
-      totalAmount,
-      referenceNo,
-      reasonCode,
-      notes,
-      description: 'Item sold or removed from inventory',
-      timestamp
-    };
-    currentSupplierSummaryInvoice = null;
-
-    if (stockOutPrintSubmitController.processing) {
-      alert('Invoice generation is already in progress. Please wait.');
-      return;
-    }
-
-    generateInvoiceBtn.disabled = true;
-    generateInvoiceBtn.textContent = 'Printing...';
-
-    try {
-      const invoiceHtml = renderInvoiceHtml(currentInvoicePreview);
-      const result = await stockOutPrintSubmitController.run({
-        printFn: async () => {
-          await openPrintDocument(invoiceHtml, `Stock-Out-${referenceNo || 'Receipt'}`);
-        },
-        submitFn: async () => {
-          await processStockOut({
-            itemId,
-            timestamp,
-            supplierName,
-            customerName: partyName,
-            referenceNo,
-            quantity,
-            unitPrice,
-            reasonCode,
-            notes,
-          });
-        },
-      });
-
-      if (!result.ok) {
-        alert(result.duplicate
-          ? result.message
-          : `Printing failed. Stock-Out was not submitted. ${result.message}`);
+  if (generateInvoiceBtn) {
+    generateInvoiceBtn.addEventListener('click', async () => {
+      const validation = validateStockOutRows();
+      if (!validation.ok) {
+        alert(validation.message);
         return;
       }
 
-      alert(`Stock-Out Logged Successfully! Deducted ${quantity} pcs.`);
-      form.reset();
-      datetimeInput.value = getLocalDatetimeString();
-      await refreshAllData();
-    } catch (error) {
-      alert(`Printing failed. Stock-Out was not submitted. ${error.message || ''}`);
-    } finally {
-      generateInvoiceBtn.disabled = false;
-      generateInvoiceBtn.textContent = 'Generate Invoice';
-    }
-  });
+      const { validRows, reasonCode, notes, timestamp, referenceNo } = validation;
+      const preview = createStockOutInvoicePreview({
+        supplierName: supplierInput.value.trim() || 'Supplier',
+        customerName: customerInput.value.trim() || 'Customer',
+        invoiceNo: refInput.value.trim() || 'N/A',
+        notes,
+        reasonCode,
+        timestamp,
+        rows: validRows,
+      });
+
+      if (!preview) {
+        alert('Please add at least one valid item row before generating an invoice.');
+        return;
+      }
+
+      if (stockOutPrintSubmitController.processing) {
+        alert('Invoice generation is already in progress. Please wait.');
+        return;
+      }
+
+      generateInvoiceBtn.disabled = true;
+      generateInvoiceBtn.textContent = 'Printing...';
+
+      try {
+        currentInvoicePreview = preview;
+        currentSupplierSummaryInvoice = null;
+
+        const invoiceHtml = renderInvoiceHtml({
+          type: 'OUT',
+          title: 'Stock-Out Invoice',
+          itemName: preview.items[0]?.itemName || 'Dress Item',
+          supplierName: preview.supplierName,
+          customerName: preview.customerName,
+          referenceNo: preview.referenceNo,
+          quantity: preview.quantity,
+          unitPrice: preview.items[0]?.unitPrice || 0,
+          totalAmount: preview.totalAmount,
+          timestamp: preview.timestamp,
+          notes: preview.notes,
+          description: preview.description,
+          items: preview.items,
+        });
+
+        const stockOutItems = buildStockOutItems(validRows, reasonCode, notes, timestamp, referenceNo);
+
+        const result = await stockOutPrintSubmitController.run({
+          printFn: async () => {
+            await openPrintDocument(invoiceHtml, `Stock-Out-${preview.referenceNo || 'Receipt'}`);
+          },
+          submitFn: async () => {
+            await processStockOutMulti(stockOutItems);
+          },
+        });
+
+        if (!result.ok) {
+          alert(result.duplicate
+            ? result.message
+            : `Printing failed. Stock-Out was not submitted. ${result.message}`);
+          return;
+        }
+
+        const totalAmount = calculateGrandTotal(validRows);
+        const totalQty = validRows.reduce((sum, row) => sum + Number(row.querySelector('.stock-out-entry-qty').value || 0), 0);
+        alert(`Stock-Out Logged Successfully! ${validRows.length} item line(s) recorded, ${totalQty} pcs deducted. Total: ${formatCurrency(totalAmount)}`);
+        form.reset();
+        datetimeInput.value = getLocalDatetimeString();
+        await refreshAllData();
+      } catch (error) {
+        alert(`Printing failed. Stock-Out was not submitted. ${error.message || ''}`);
+      } finally {
+        generateInvoiceBtn.disabled = false;
+        generateInvoiceBtn.textContent = 'Generate Invoice';
+      }
+    });
+  }
 }
 
 // Reports & CSV Exporters
@@ -1966,6 +2595,7 @@ async function renderSupplierDailySummary() {
   const summary = await getSupplierDailyStockInSummary({
     supplierName,
     date: dateFilter.value,
+    transactions: allTransactionsCache,
   });
 
   if (!summary.length) {
@@ -1994,6 +2624,7 @@ async function generateSupplierInvoice() {
   const summary = await getSupplierDailyStockInSummary({
     supplierName: selectedSupplier,
     date: selectedDate,
+    transactions: allTransactionsCache,
   });
 
   if (!summary.length) {
@@ -2031,7 +2662,7 @@ async function renderSupplierOverallSummary() {
     return;
   }
 
-  const summary = await getSupplierDailyStockInSummary({ supplierName });
+  const summary = await getSupplierDailyStockInSummary({ supplierName, transactions: allTransactionsCache });
   if (!summary.length) {
     container.innerHTML = '<div class="invoice-empty-state">No stock-in transactions were found for this supplier.</div>';
     return;
@@ -2069,7 +2700,7 @@ function downloadSupplierHistory() {
     return;
   }
 
-  getSupplierDailyStockInSummary({ supplierName }).then(summary => {
+  getSupplierDailyStockInSummary({ supplierName, transactions: allTransactionsCache }).then(summary => {
     if (!summary.length) {
       alert('No stock-in transactions were found for this supplier.');
       return;

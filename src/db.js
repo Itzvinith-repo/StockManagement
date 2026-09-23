@@ -184,16 +184,20 @@ export async function getAllItems() {
   return getLocalItems();
 }
 
-export async function getAllVendors() {
+export async function getAllVendors(preloaded = {}) {
+  const { items: preloadedItems, transactions: preloadedTransactions } = preloaded;
+
   if (isSupabaseConfigured()) {
-    const [{ data: vendors = [], error: vendorError }, { data: items = [], error: itemError }, { data: transactions = [], error: transactionError }] = await Promise.all([
+    const [{ data: vendors = [], error: vendorError }, itemsResult, transactionsResult] = await Promise.all([
       supabase.from('vendors').select('*').order('name'),
-      supabase.from('items').select('supplier_name'),
-      supabase.from('transactions').select('supplier_name'),
+      preloadedItems ? Promise.resolve({ data: preloadedItems, error: null }) : supabase.from('items').select('supplier_name'),
+      preloadedTransactions ? Promise.resolve({ data: preloadedTransactions, error: null }) : supabase.from('transactions').select('supplier_name'),
     ]);
+    const items = itemsResult.data || [];
+    const transactions = transactionsResult.data || [];
     if (vendorError) throw vendorError;
-    if (itemError) throw itemError;
-    if (transactionError) throw transactionError;
+    if (itemsResult.error) throw itemsResult.error;
+    if (transactionsResult.error) throw transactionsResult.error;
     const names = new Map((vendors || []).map(vendor => [vendor.name.trim().toLowerCase(), {
       id: vendor.id,
       name: vendor.name,
@@ -201,8 +205,8 @@ export async function getAllVendors() {
       createdAt: vendor.created_at,
     }]));
     const legacyNames = [];
-    [...(items || []), ...(transactions || [])].forEach(row => {
-      const name = (row.supplier_name || '').trim();
+    [...items, ...transactions].forEach(row => {
+      const name = (row.supplier_name ?? row.supplierName ?? '').trim();
       if (name && !names.has(name.toLowerCase())) legacyNames.push(name);
     });
     if (legacyNames.length) {
@@ -224,8 +228,8 @@ export async function getAllVendors() {
 
   const [vendors, items, transactions] = await Promise.all([
     db.vendors.toArray(),
-    db.items.toArray(),
-    db.transactions.toArray(),
+    preloadedItems ? Promise.resolve(preloadedItems) : db.items.toArray(),
+    preloadedTransactions ? Promise.resolve(preloadedTransactions) : db.transactions.toArray(),
   ]);
   const names = new Map(vendors.map(vendor => [vendor.name.trim().toLowerCase(), vendor]));
   const legacyNames = [];
@@ -536,6 +540,7 @@ export async function processStockOut(data) {
 
     const nextQty = currentQty - qty;
     const unitPrice = Number(item.unit_price || 0);
+    const usedPrice = Number(data.unitPrice || unitPrice);
     const nextTotalValue = nextQty * unitPrice;
 
     const { error: updateError } = await supabase.from('items').update({
@@ -555,8 +560,11 @@ export async function processStockOut(data) {
       customer_name: data.customerName || 'N/A',
       reference_no: data.referenceNo || 'N/A',
       quantity: qty,
-      unit_price: unitPrice,
-      total_amount: qty * unitPrice,
+      unit_price: usedPrice,
+      total_amount: qty * usedPrice,
+      total_wholesale_amount: qty * usedPrice,
+      wholesale_price: usedPrice,
+      total_cost_amount: qty * unitPrice,
       reason_code: data.reasonCode || 'Wholesale Customer Sale',
       notes: data.notes || '',
     }]);
@@ -576,11 +584,12 @@ export async function processStockOut(data) {
     }
 
     const nextQty = currentQty - qty;
-    const usedPrice = Number(item.unitPrice || 0);
+    const costPrice = Number(item.unitPrice || 0);
+    const usedPrice = Number(data.unitPrice || costPrice);
 
     await db.items.update(itemId, {
       quantity: nextQty,
-      totalValue: nextQty * usedPrice,
+      totalValue: nextQty * costPrice,
       updatedAt: new Date().toISOString(),
     });
 
@@ -595,10 +604,75 @@ export async function processStockOut(data) {
       quantity: qty,
       unitPrice: usedPrice,
       totalAmount: qty * usedPrice,
+      totalWholesaleAmount: qty * usedPrice,
+      wholesalePrice: usedPrice,
+      totalCostAmount: qty * costPrice,
       reasonCode: data.reasonCode || 'Wholesale Customer Sale',
       notes: data.notes || '',
       description: item.description || '',
     });
+  });
+}
+
+export async function processStockOutMulti(items) {
+  if (!Array.isArray(items) || !items.length) {
+    throw new Error('No stock-out items provided.');
+  }
+
+  if (isSupabaseConfigured()) {
+    for (const entry of items) {
+      await processStockOut(entry);
+    }
+    return;
+  }
+
+  return await db.transaction('rw', db.items, db.transactions, async () => {
+    for (const entry of items) {
+      const itemId = Number(entry.itemId);
+      const qty = Number(entry.quantity) || 0;
+      const timestamp = entry.timestamp || new Date().toISOString();
+
+      if (!itemId || qty <= 0) {
+        throw new Error('Each stock-out item requires a valid item and quantity greater than zero.');
+      }
+
+      const item = await db.items.get(itemId);
+      if (!item) throw new Error(`Dress item not found for item id ${itemId}`);
+
+      const currentQty = Number(item.quantity || 0);
+      if (currentQty < qty) {
+        throw new Error(`Insufficient stock for ${item.name}. Available: ${currentQty}, Requested: ${qty}.`);
+      }
+
+      const nextQty = currentQty - qty;
+      const costPrice = Number(item.unitPrice || 0);
+      const usedPrice = Number(entry.unitPrice || costPrice);
+
+      await db.items.update(itemId, {
+        quantity: nextQty,
+        totalValue: nextQty * costPrice,
+        updatedAt: new Date().toISOString(),
+      });
+
+      await db.transactions.add({
+        type: 'OUT',
+        timestamp,
+        itemId,
+        itemName: item.name,
+        supplierName: entry.supplierName || item.supplierName || '',
+        customerName: entry.customerName || 'N/A',
+        referenceNo: entry.referenceNo || 'N/A',
+        quantity: qty,
+        unitPrice: usedPrice,
+        totalAmount: qty * usedPrice,
+        totalWholesaleAmount: qty * usedPrice,
+        wholesalePrice: usedPrice,
+        totalCostAmount: qty * costPrice,
+        reasonCode: entry.reasonCode || 'Wholesale Customer Sale',
+        notes: entry.notes || '',
+        description: item.description || '',
+      });
+    }
   });
 }
 
@@ -794,10 +868,10 @@ export async function recordStockCorrection({
   });
 }
 
-export async function getSupplierDailyStockInSummary({ supplierName = '', date = '' } = {}) {
-  const transactions = await getAllTransactions();
+export async function getSupplierDailyStockInSummary({ supplierName = '', date = '', transactions } = {}) {
+  const txs = transactions || await getAllTransactions();
 
-  const filtered = transactions.filter(tx => {
+  const filtered = txs.filter(tx => {
     if (tx.type !== 'IN') return false;
     const txDate = new Date(tx.timestamp || new Date()).toISOString().slice(0, 10);
 

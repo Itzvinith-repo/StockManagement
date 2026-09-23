@@ -25,7 +25,10 @@ create table if not exists public.transactions (
   total_amount numeric(14,2) default 0,
   reason_code text,
   description text default '',
-  notes text default ''
+  notes text default '',
+  total_wholesale_amount numeric(14,2) default 0,
+  total_cost_amount numeric(14,2) default 0,
+  wholesale_price numeric(12,2) default 0
 );
 
 create table if not exists public.vendors (
@@ -44,6 +47,9 @@ alter table public.transactions add column if not exists transaction_time timest
 alter table public.transactions add column if not exists unit_price numeric(12,2) default 0;
 alter table public.transactions add column if not exists total_amount numeric(14,2) default 0;
 alter table public.transactions add column if not exists description text default '';
+alter table public.transactions add column if not exists total_wholesale_amount numeric(14,2) default 0;
+alter table public.transactions add column if not exists total_cost_amount numeric(14,2) default 0;
+alter table public.transactions add column if not exists wholesale_price numeric(12,2) default 0;
 
 -- Preserve existing transaction dates when upgrading from the old timestamp column.
 do $$
@@ -62,6 +68,7 @@ begin
 end $$;
 
 create index if not exists idx_transactions_transaction_time on public.transactions(transaction_time desc);
+create index if not exists idx_transactions_type_timestamp on public.transactions(type, transaction_time desc);
 create index if not exists idx_items_supplier_name on public.items(supplier_name);
 create index if not exists idx_vendors_name on public.vendors(name);
 

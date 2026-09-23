@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Wholesale Dress Stock Recording System</title>
   <meta name="description" content="Offline-first Wholesale Dress Stock Recording, Inventory Management, and Stock Valuation System.">
-  <script type="module" crossorigin src="/assets/index-BER1an8B.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-j7M_JNJ3.css">
+  <script type="module" crossorigin src="/assets/index-CO3m2od9.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Cs5-O7Kj.css">
 </head>
 <body>
   <div id="app">
     <!-- Mobile sidebar backdrop -->
     <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
-    <!-- Sidebar Navigation -->
+    <!-- Sidebar Navigation -->ASssass
     <aside class="sidebar" id="sidebar">
       <div class="brand-header">
         <div class="brand-logo">SS</div>
         <div>
-          <h2 class="brand-title">Stock Management System</h2>
+          <h2 class="brand-title">Farook Textiles</h2>
           <span class="brand-subtitle">Retail Inventory</span>
         </div>
       </div>
@@ -37,6 +37,12 @@
           </button>
         </li>
         <li>
+          <button class="nav-btn" data-tab="vendor-tab" id="nav-vendors">
+            <i data-lucide="store"></i>
+            <span>Vendor Catalog</span>
+          </button>
+        </li>
+        <li>
           <button class="nav-btn" data-tab="stock-in-tab" id="nav-stock-in">
             <i data-lucide="arrow-down-left-square"></i>
             <span>Stock-In (Receive)</span>
@@ -46,6 +52,12 @@
           <button class="nav-btn" data-tab="stock-out-tab" id="nav-stock-out">
             <i data-lucide="arrow-up-right-square"></i>
             <span>Stock-Out (Sales)</span>
+          </button>
+        </li>
+        <li>
+          <button class="nav-btn" data-tab="invoices-tab" id="nav-invoices">
+            <i data-lucide="receipt"></i>
+            <span>Invoices</span>
           </button>
         </li>
         <li>
@@ -181,7 +193,7 @@
                     <th>Date & Time</th>
                     <th>Type</th>
                     <th>Dress Item</th>
-                    <th>Variant (Size/Color)</th>
+                    <th>Item Detail</th>
                     <th>Qty</th>
                     <th>Party / Reference</th>
                     <th>Reason / Details</th>
@@ -221,16 +233,48 @@
                   <tr>
                     <th>Dress Name</th>
                     <th>Supplier / Vendor Details</th>
-                    <th>Unit Cost</th>
-                    <th>Wholesale Price</th>
-                    <th>Available Variants & Stock (Pieces)</th>
-                    <th>Total Stock</th>
+                    <th>Unit Price</th>
+                    <th>Total Stock Value</th>
+                    <th>Current Quantity</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="catalog-table-tbody">
-                  <tr><td colspan="7" style="text-align: center; color: var(--text-dim);">Loading catalog...</td></tr>
+                  <tr><td colspan="6" style="text-align: center; color: var(--text-dim);">Loading catalog...</td></tr>
                 </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VENDOR CATALOG TAB -->
+        <section class="tab-pane" id="vendor-tab">
+          <div class="card vendor-catalog-card">
+            <div class="card-header">
+              <div>
+                <div class="eyebrow">Supplier directory</div>
+                <h3 class="card-title"><i data-lucide="store"></i> Vendor Catalog</h3>
+              </div>
+            </div>
+            <p class="invoice-helper">Add the vendors you work with. They will be available in the dress, stock-in, and stock-out forms.</p>
+            <form id="vendor-form" class="vendor-form">
+              <div class="form-group">
+                <label for="vendor-name">Vendor name *</label>
+                <input id="vendor-name" class="form-control form-control-simple" placeholder="Vendor or supplier name" required>
+              </div>
+              <div class="form-group">
+                <label for="vendor-contact">Contact details</label>
+                <input id="vendor-contact" class="form-control form-control-simple" placeholder="Phone, email, or contact person">
+              </div>
+              <div class="vendor-form-actions">
+                <button type="submit" class="btn btn-primary" id="vendor-submit-btn"><i data-lucide="plus"></i> Add Vendor</button>
+                <button type="button" class="btn btn-secondary" id="vendor-cancel-edit-btn" style="display: none;">Cancel</button>
+              </div>
+            </form>
+            <div class="table-responsive vendor-table-wrap">
+              <table class="data-table">
+                <thead><tr><th>Vendor Name</th><th>Contact Details</th><th>Actions</th></tr></thead>
+                <tbody id="vendor-table-tbody"><tr><td colspan="3" style="text-align: center; color: var(--text-dim);">Loading vendors...</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -251,57 +295,43 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="stock-in-item">Select Dress Item *</label>
-                  <select id="stock-in-item" class="form-control form-control-simple" required>
-                    <option value="">-- Choose Item --</option>
+                  <label for="stock-in-supplier">Supplier / Vendor Name *</label>
+                  <select id="stock-in-supplier" class="form-control form-control-simple" required>
+                    <option value="">-- Choose Vendor --</option>
                   </select>
                 </div>
               </div>
 
               <div class="form-row">
                 <div class="form-group">
-                  <label for="stock-in-supplier">Supplier / Vendor Name</label>
-                  <input type="text" id="stock-in-supplier" class="form-control form-control-simple" placeholder="Vendor name (auto-filled if empty)">
-                </div>
-
-                <div class="form-group">
-                  <label for="stock-in-cost">Purchase / Unit Cost Price (LKR per piece) *</label>
-                  <input type="number" step="0.01" min="0" id="stock-in-cost" class="form-control form-control-simple" placeholder="0.00" required>
-                  <small style="color: var(--text-dim); font-size: 0.75rem;">Allows updating purchase cost for price fluctuation tracking.</small>
-                </div>
-              </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="stock-in-size">Size *</label>
-                  <select id="stock-in-size" class="form-control form-control-simple" required>
-                    <option value="XS">XS</option>
-                    <option value="S">S</option>
-                    <option value="M" selected>M</option>
-                    <option value="L">L</option>
-                    <option value="XL">XL</option>
-                    <option value="XXL">XXL</option>
-                    <option value="Free Size">Free Size</option>
-                  </select>
-                </div>
-
-                <div class="form-group">
-                  <label for="stock-in-color">Color / Variant *</label>
-                  <input type="text" id="stock-in-color" class="form-control form-control-simple" placeholder="e.g. Royal Blue, Emerald Green" required>
-                </div>
-
-                <div class="form-group">
-                  <label for="stock-in-qty">Quantity Received (Pieces) *</label>
-                  <input type="number" min="1" id="stock-in-qty" class="form-control form-control-simple" placeholder="10" required>
+                  <label for="stock-in-invoice-no">Invoice / Reference No</label>
+                  <input type="text" id="stock-in-invoice-no" class="form-control form-control-simple" placeholder="PO-2026-001">
                 </div>
               </div>
 
               <div class="form-group">
-                <label for="stock-in-notes">Shipment Notes / Batch Reference</label>
-                <textarea id="stock-in-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+                  <label style="margin:0;">Items to Receive</label>
+                  <button type="button" class="btn btn-secondary btn-sm" id="stock-in-add-item-btn">Add Item</button>
+                </div>
+
+                <div id="stock-in-items-container" style="display:flex; flex-direction:column; gap:12px;"></div>
               </div>
 
-              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="stock-in-grand-total">Grand Total (LKR)</label>
+                  <input type="number" step="0.01" id="stock-in-grand-total" class="form-control form-control-simple" readonly placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-in-notes">Shipment Notes / Batch Reference</label>
+                  <textarea id="stock-in-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary" id="stock-in-generate-invoice-btn">Generate Invoice</button>
                 <button type="reset" class="btn btn-secondary">Reset Form</button>
                 <button type="submit" class="btn btn-success">
                   <i data-lucide="check"></i> Submit Stock-In
@@ -335,6 +365,13 @@
 
               <div class="form-row">
                 <div class="form-group">
+                  <label for="stock-out-supplier">Vendor / Supplier *</label>
+                  <select id="stock-out-supplier" class="form-control form-control-simple" required>
+                    <option value="">-- Choose Vendor --</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
                   <label for="stock-out-customer">Customer / Retailer Name</label>
                   <input type="text" id="stock-out-customer" class="form-control form-control-simple" placeholder="Retailer / Customer Name">
                 </div>
@@ -347,15 +384,18 @@
 
               <div class="form-row">
                 <div class="form-group">
-                  <label for="stock-out-variant">Available Variant & Stock *</label>
-                  <select id="stock-out-variant" class="form-control form-control-simple" required>
-                    <option value="">-- Select Item First --</option>
-                  </select>
+                  <label for="stock-out-qty">Quantity Deducted (Pieces) *</label>
+                  <input type="number" min="1" id="stock-out-qty" class="form-control form-control-simple" placeholder="1" required>
                 </div>
 
                 <div class="form-group">
-                  <label for="stock-out-qty">Quantity Deducted (Pieces) *</label>
-                  <input type="number" min="1" id="stock-out-qty" class="form-control form-control-simple" placeholder="1" required>
+                  <label for="stock-out-unit-price">Unit Price (LKR) *</label>
+                  <input type="number" step="0.01" min="0" id="stock-out-unit-price" class="form-control form-control-simple" placeholder="0.00" required>
+                </div>
+
+                <div class="form-group">
+                  <label for="stock-out-total-amount">Total Amount (LKR)</label>
+                  <input type="number" step="0.01" id="stock-out-total-amount" class="form-control form-control-simple" readonly placeholder="0.00">
                 </div>
               </div>
 
@@ -373,13 +413,67 @@
                 <textarea id="stock-out-notes" class="form-control form-control-simple" rows="2" placeholder="Optional notes..."></textarea>
               </div>
 
-              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
+              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary" id="stock-out-generate-invoice-btn">Generate Invoice</button>
                 <button type="reset" class="btn btn-secondary">Reset Form</button>
                 <button type="submit" class="btn btn-danger">
                   <i data-lucide="minus-circle"></i> Confirm Stock-Out
                 </button>
               </div>
             </form>
+          </div>
+        </section>
+
+        <!-- INVOICES TAB -->
+        <section class="tab-pane" id="invoices-tab">
+          <div class="card invoice-generator-card" style="margin-bottom: 20px;">
+            <div class="card-header">
+              <div>
+                <div class="eyebrow">Supplier billing</div>
+                <h3 class="card-title"><i data-lucide="receipt"></i> Supplier Invoice Generator</h3>
+              </div>
+              <button class="btn btn-primary btn-sm" id="generate-supplier-invoice-btn">
+                <i data-lucide="file-output"></i> Generate Invoice
+              </button>
+            </div>
+            <div class="invoice-controls">
+              <div class="form-group">
+                <label for="rpt-supplier-summary-filter">Supplier name</label>
+                <input type="text" id="rpt-supplier-summary-filter" class="form-control form-control-simple" placeholder="Enter supplier name">
+              </div>
+              <div class="form-group">
+                <label for="rpt-daily-date-filter">Invoice date</label>
+                <input type="date" id="rpt-daily-date-filter" class="form-control form-control-simple">
+              </div>
+            </div>
+            <p class="invoice-helper">Enter a supplier and date to prepare a professional summary of every stock-in transaction recorded that day.</p>
+          </div>
+
+          <div class="card invoice-preview-card" style="margin-bottom: 20px;">
+            <div class="card-header">
+              <div>
+                <div class="eyebrow">Ready to export</div>
+                <h3 class="card-title"><i data-lucide="file-text"></i> Invoice Preview</h3>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="download-current-invoice-btn">
+                <i data-lucide="download"></i> Download PDF
+              </button>
+            </div>
+            <div id="invoice-detail-container" class="invoice-preview-shell"></div>
+          </div>
+
+          <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+              <div>
+                <div class="eyebrow">Supplier history</div>
+                <h3 class="card-title"><i data-lucide="calendar-range"></i> Overall Transactions by Supplier</h3>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="download-supplier-history-btn">
+                <i data-lucide="download"></i> Download PDF
+              </button>
+            </div>
+            <p class="invoice-helper">Use the same supplier field to review all stock-in days and totals for that supplier.</p>
+            <div id="supplier-overall-summary" class="table-responsive" style="margin-top: 14px;"></div>
           </div>
         </section>
 
@@ -402,7 +496,7 @@
             <div class="card-header">
               <div>
                 <h3 class="card-title">Real-Time Current Stock Level Report</h3>
-                <p style="font-size: 0.85rem; color: var(--text-muted);">Live count of available pieces categorized by item name, size, and color variants.</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted);">Live stock count for each dress item with auto-calculated stock value.</p>
               </div>
               <button class="btn btn-success btn-sm" id="export-stock-csv">
                 <i data-lucide="download"></i> Export CSV
@@ -412,18 +506,8 @@
             <div class="filter-bar">
               <div class="search-input-wrap">
                 <i data-lucide="search"></i>
-                <input type="text" id="rpt-stock-search" class="form-control" placeholder="Search by item name or color...">
+                <input type="text" id="rpt-stock-search" class="form-control" placeholder="Search by item name or supplier...">
               </div>
-              <select id="rpt-stock-size-filter" class="form-control" style="max-width: 150px;">
-                <option value="">All Sizes</option>
-                <option value="XS">XS</option>
-                <option value="S">S</option>
-                <option value="M">M</option>
-                <option value="L">L</option>
-                <option value="XL">XL</option>
-                <option value="XXL">XXL</option>
-                <option value="Free Size">Free Size</option>
-              </select>
               <select id="rpt-stock-status-filter" class="form-control" style="max-width: 180px;">
                 <option value="">All Stock Levels</option>
                 <option value="in_stock">In Stock (&gt; 0)</option>
@@ -437,18 +521,15 @@
                 <thead>
                   <tr>
                     <th>Item Name</th>
-                    <th>Size</th>
-                    <th>Color / Variant</th>
-                    <th>Available Stock (Pieces)</th>
-                    <th>Unit Cost</th>
-                    <th>Wholesale Price</th>
-                    <th>Subtotal Cost Value</th>
-                    <th>Subtotal Wholesale Value</th>
+                    <th>Supplier</th>
+                    <th>Stock (Pieces)</th>
+                    <th>Unit Price</th>
+                    <th>Total Stock Value</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody id="rpt-stock-tbody">
-                  <tr><td colspan="9" style="text-align: center; color: var(--text-dim);">Loading inventory data...</td></tr>
+                  <tr><td colspan="6" style="text-align: center; color: var(--text-dim);">Loading inventory data...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -497,19 +578,21 @@
                     <th>Date & Time</th>
                     <th>Type</th>
                     <th>Item Name</th>
-                    <th>Size & Color</th>
+                    <th>Stock Detail</th>
                     <th>Quantity (Pieces)</th>
                     <th>Unit Cost</th>
                     <th>Wholesale Price</th>
                     <th>Reason / Action</th>
                     <th>Party / Reference</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="rpt-movement-tbody">
-                  <tr><td colspan="9" style="text-align: center; color: var(--text-dim);">Loading transaction logs...</td></tr>
+                  <tr><td colspan="10" style="text-align: center; color: var(--text-dim);">Loading transaction logs...</td></tr>
                 </tbody>
               </table>
             </div>
+
           </div>
 
           <!-- Report 3: Total Stock Valuation Report -->
@@ -673,7 +756,9 @@
           <div class="form-row">
             <div class="form-group">
               <label for="dress-supplier-name">Supplier / Vendor Name *</label>
-              <input type="text" id="dress-supplier-name" class="form-control form-control-simple" placeholder="e.g. Elegance Fabrics Ltd." required>
+              <select id="dress-supplier-name" class="form-control form-control-simple" required>
+                <option value="">-- Choose Vendor --</option>
+              </select>
             </div>
             <div class="form-group">
               <label for="dress-supplier-contact">Supplier Contact Details</label>
@@ -681,28 +766,9 @@
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label for="dress-cost">Purchase / Unit Cost Price (LKR) *</label>
-              <input type="number" step="0.01" min="0" id="dress-cost" class="form-control form-control-simple" placeholder="35.00" required>
-            </div>
-            <div class="form-group">
-              <label for="dress-wholesale-price">Wholesale Selling Price (LKR) *</label>
-              <input type="number" step="0.01" min="0" id="dress-wholesale-price" class="form-control form-control-simple" placeholder="68.00" required>
-            </div>
-          </div>
-
-          <!-- Variants List Builder -->
-          <div class="form-group" style="margin-top: 16px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-              <label style="margin: 0;">Initial Variants (Size, Color, Stock Pieces)</label>
-              <button type="button" class="btn btn-secondary btn-sm" id="add-variant-row-btn">
-                <i data-lucide="plus"></i> Add Variant
-              </button>
-            </div>
-            <div id="variant-builder-container">
-              <!-- Dynamic Rows inserted via JS -->
-            </div>
+          <div class="form-group">
+            <label for="dress-unit-price">Unit Price (LKR) *</label>
+            <input type="number" step="0.01" min="0" id="dress-unit-price" class="form-control form-control-simple" placeholder="0.00" required>
           </div>
         </div>
 
@@ -711,6 +777,36 @@
           <button type="submit" class="btn btn-primary" id="dress-modal-submit">Save Item</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="invoice-modal">
+    <div class="modal-container" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="invoice-modal-title">Invoice</h3>
+        <button class="modal-close" id="invoice-modal-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div id="invoice-content" style="font-size: 0.95rem; line-height: 1.7;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="invoice-modal-close-btn">Close</button>
+        <button type="button" class="btn btn-primary" id="invoice-print-btn">Print Invoice</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="transaction-detail-modal">
+    <div class="modal-container" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Transaction Details</h3>
+        <button class="modal-close" id="transaction-detail-close"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body" id="transaction-detail-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="transaction-detail-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="transaction-detail-save">Save Supplier and Date</button>
+      </div>
     </div>
   </div>
 
